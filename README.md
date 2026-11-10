@@ -4,7 +4,7 @@ LifeResets is a private, adaptive personal operating system for turning goals in
 
 ## Current stage
 
-The repository contains the FastAPI application, database migrations, local account authentication, profile and consent APIs, account data export/deletion, and minimal audit events. Domain features are still pending.
+The repository contains the FastAPI application, database migrations, local account authentication, profile and consent APIs, account data export/deletion, minimal audit events, and the first domain data layer for goals, metrics, tasks, habits, and evidence.
 
 ## Requirements
 
@@ -50,8 +50,19 @@ This is a local-first account foundation. MFA, password recovery, and deployed l
 - GET and PATCH /api/v1/profile read or update the signed-in profile.
 - GET and POST /api/v1/consents inspect or append consent records. Each grant or withdrawal is a new record.
 - GET /api/v1/audit lists minimal account events.
-- GET /api/v1/export returns account, profile, consent, and audit data without credentials.
-- DELETE /api/v1/account permanently removes the user's profile, sessions, consent records, and linked audit history.
+- GET /api/v1/export returns account, profile, consent, audit, goals, metrics, tasks, habits, and evidence data without credentials.
+- DELETE /api/v1/account permanently removes the user's profile, sessions, consent records, domain data, and linked audit history.
+
+## Goals and domain data API
+
+- GET /api/v1/domains returns the eight fixed personal domains: career, fitness, finance, discipline, learning, mental wellness, relationships, and lifestyle. Empire remains a cross-domain initiative layer.
+- POST /api/v1/goals creates an owned goal with an optional dated target and unit-labelled metrics; GET /api/v1/goals and GET /api/v1/goals/{id} list or retrieve owned goals; PATCH /api/v1/goals/{id} updates goal fields.
+- POST /api/v1/goals/{id}/metrics and PATCH /api/v1/metrics/{id} add or update a metric with baseline, target, current value, unit, and optional date.
+- GET/POST /api/v1/tasks list or create owned tasks; PATCH /api/v1/tasks/{id} records pending, completed, or skipped status and a UTC completion time.
+- GET/POST /api/v1/habits list or create owned habits with a cue, action, schedule, minimum version, and recovery action.
+- GET/POST /api/v1/evidence list or add evidence. The public API records evidence as self-reported and unverified; callers cannot mark it verified.
+
+All domain records are scoped to the signed-in account. API creation and changes require the session CSRF token. Dates use ISO calendar dates, and metric values retain their explicitly supplied units.
 
 For state-changing requests, read the lr-csrf cookie and send its value in the X-CSRF-Token header. The session cookie is HttpOnly.
 

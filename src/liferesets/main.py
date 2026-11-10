@@ -4,6 +4,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi import status as http_status
 
 from liferesets.database import database_is_ready
+from liferesets.domain_data import router as domain_data_router
 from liferesets.error_handlers import register_error_handlers
 from liferesets.health import is_healthy
 from liferesets.identity import router as identity_router
@@ -15,6 +16,7 @@ configure_logging(settings.log_level)
 app = FastAPI(title=settings.app_name, version="0.1.0")
 register_error_handlers(app)
 app.include_router(identity_router)
+app.include_router(domain_data_router)
 
 
 @app.get("/health", tags=["system"])

@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from liferesets.database import get_db
+from liferesets.domain_data import export_domain_data
 from liferesets.models import AuditEvent, ConsentRecord, Profile, User
 from liferesets.security import (
     DUMMY_PASSWORD_HASH,
@@ -287,6 +288,7 @@ def export_account_data(
             }
             for event in events
         ],
+        "domain_data": export_domain_data(db, auth.user.id),
     }
 
 

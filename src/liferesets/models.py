@@ -3,10 +3,24 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, Uuid, func
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    Uuid,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from liferesets.base import Base
@@ -40,6 +54,18 @@ class User(Base):
         back_populates="user", cascade="all, delete-orphan", passive_deletes=True
     )
     audit_events: Mapped[list[AuditEvent]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", passive_deletes=True
+    )
+    goals: Mapped[list[Goal]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", passive_deletes=True
+    )
+    tasks: Mapped[list[Task]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", passive_deletes=True
+    )
+    habits: Mapped[list[Habit]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", passive_deletes=True
+    )
+    evidence: Mapped[list[Evidence]] = relationship(
         back_populates="user", cascade="all, delete-orphan", passive_deletes=True
     )
 
@@ -125,3 +151,172 @@ class AuditEvent(Base):
     )
 
     user: Mapped[User | None] = relationship(back_populates="audit_events")
+
+
+class Goal(Base):
+    """A measurable outcome owned by one user and assigned to one domain."""
+
+    __tablename__ = "goals"
+    __table_args__ = (
+        CheckConstraint(
+            "domain IN ('career','fitness','finance','discipline','learning',"
+            "'mental_wellness','relationships','lifestyle')",
+            name="valid_domain",
+        ),
+        CheckConstraint("priority BETWEEN 1 AND 5", name="valid_priority"),
+        CheckConstraint(
+            "status IN ('active','paused','completed','archived')",
+            name="valid_goal_status",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    domain: Mapped[str] = mapped_column(String(32), nullable=False)
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    priority: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="active", nullable=False)
+    target_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+    user: Mapped[User] = relationship(back_populates="goals")
+    metrics: Mapped[list[GoalMetric]] = relationship(
+        back_populates="goal", cascade="all, delete-orphan", passive_deletes=True
+    )
+
+
+class GoalMetric(Base):
+    """A target and optional baseline for a goal, with an explicit unit."""
+
+    __tablename__ = "goal_metrics"
+    __table_args__ = (
+        CheckConstraint(
+            "source IN ('self_report','imported','verified')",
+            name="valid_metric_source",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    goal_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("goals.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    unit: Mapped[str] = mapped_column(String(40), nullable=False)
+    baseline_value: Mapped[Decimal | None] = mapped_column(
+        Numeric(16, 4), nullable=True
+    )
+    target_value: Mapped[Decimal] = mapped_column(Numeric(16, 4), nullable=False)
+    current_value: Mapped[Decimal | None] = mapped_column(Numeric(16, 4), nullable=True)
+    source: Mapped[str] = mapped_column(
+        String(20), default="self_report", nullable=False
+    )
+    target_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+    goal: Mapped[Goal] = relationship(back_populates="metrics")
+
+
+class Task(Base):
+    """A scheduled action or checkpoint associated with an account and goal."""
+
+    __tablename__ = "tasks"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending','completed','skipped')", name="valid_task_status"
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    goal_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("goals.id", ondelete="SET NULL"), index=True, nullable=True
+    )
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+    user: Mapped[User] = relationship(back_populates="tasks")
+
+
+class Habit(Base):
+    """A repeatable routine with a minimum version and recovery path."""
+
+    __tablename__ = "habits"
+    __table_args__ = (
+        CheckConstraint(
+            "frequency IN ('daily','weekly','custom')", name="valid_habit_frequency"
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    goal_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("goals.id", ondelete="SET NULL"), index=True, nullable=True
+    )
+    cue: Mapped[str] = mapped_column(String(160), nullable=False)
+    action: Mapped[str] = mapped_column(String(240), nullable=False)
+    frequency: Mapped[str] = mapped_column(String(16), nullable=False)
+    custom_schedule: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    minimum_version: Mapped[str] = mapped_column(String(240), nullable=False)
+    recovery_action: Mapped[str] = mapped_column(String(240), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+    user: Mapped[User] = relationship(back_populates="habits")
+
+
+class Evidence(Base):
+    """Provenance-tagged evidence attached to a goal or task."""
+
+    __tablename__ = "evidence"
+    __table_args__ = (
+        CheckConstraint(
+            "source IN ('self_report','imported','verified')",
+            name="valid_evidence_source",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    goal_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("goals.id", ondelete="SET NULL"), index=True, nullable=True
+    )
+    task_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("tasks.id", ondelete="SET NULL"), index=True, nullable=True
+    )
+    source: Mapped[str] = mapped_column(
+        String(20), default="self_report", nullable=False
+    )
+    summary: Mapped[str] = mapped_column(String(500), nullable=False)
+    artifact_ref: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    captured_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+    user: Mapped[User] = relationship(back_populates="evidence")
