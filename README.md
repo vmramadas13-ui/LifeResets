@@ -64,6 +64,10 @@ This is a local-first account foundation. MFA, password recovery, and deployed l
 
 All domain records are scoped to the signed-in account. API creation and changes require the session CSRF token. Dates use ISO calendar dates, and metric values retain their explicitly supplied units.
 
+## THE CORE (initial read-only layer)
+
+POST /api/v1/core/respond accepts an authenticated question and returns a response with context provenance and truncation metadata. It reads only the signed-in user's goals, tasks, habits, and evidence, with limits of 24 records and 6,000 context characters. The current deterministic fallback reports counts; it does not make generated recommendations. There are no tools or write actions. Provider selection and external data processing remain open; see docs/decisions/0002-core-provider-boundary.md.
+
 For state-changing requests, read the lr-csrf cookie and send its value in the X-CSRF-Token header. The session cookie is HttpOnly.
 
 ## Database migrations

@@ -1,14 +1,18 @@
 """FastAPI application entry point."""
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi import status as http_status
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.orm import Session
 
-from liferesets.database import database_is_ready
+from liferesets.core import answer_read_only
+from liferesets.database import database_is_ready, get_db
 from liferesets.domain_data import router as domain_data_router
 from liferesets.error_handlers import register_error_handlers
 from liferesets.health import is_healthy
 from liferesets.identity import router as identity_router
 from liferesets.logging_config import configure_logging
+from liferesets.security import AuthenticatedWithCsrf
 from liferesets.settings import get_settings
 
 settings = get_settings()
@@ -17,6 +21,21 @@ app = FastAPI(title=settings.app_name, version="0.1.0")
 register_error_handlers(app)
 app.include_router(identity_router)
 app.include_router(domain_data_router)
+
+
+class CoreQuestion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    question: str = Field(min_length=1, max_length=1000)
+
+
+@app.post("/api/v1/core/respond", tags=["THE CORE"])
+def core_respond(
+    request: CoreQuestion,
+    auth: AuthenticatedWithCsrf,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    """Return a bounded, read-only answer based only on this account's context."""
+    return answer_read_only(db, auth.user.id, request.question)
 
 
 @app.get("/health", tags=["system"])
