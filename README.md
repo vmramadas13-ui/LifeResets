@@ -76,6 +76,10 @@ GET /api/v1/plans/preview accepts a start date and a 1–31 day horizon. It retu
 
 GET /api/v1/rpg/status derives account-owned progression from completed tasks: 10 XP per completed task and 100 XP per level, with first-task and ten-task achievements. The response exposes the formula and frames the level as activity progress, not personal worth. Progression is derived from task state and is not yet a separate event ledger.
 
+## Domain progress intelligence
+
+GET /api/v1/insights/progress compares a metric's current value with its baseline and target using `(current - baseline) / (target - baseline) * 100`. It preserves units and measurement source, returns no percentage when the baseline equals the target, and does not clamp values or make predictions. It is arithmetic only and makes no health or financial recommendations.
+
 ## Web/PWA interface
 
 Open the API root (`/`) for a responsive, installable app shell. The interface supports local sign-in/out, goal creation and listing, plan preview, RPG status, and THE CORE fallback. The service worker caches only static shell files and never caches `/api/` responses. Offline data entry and push notifications are not enabled.

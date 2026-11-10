@@ -24,8 +24,8 @@ async function loadWorkspace() {
   $("#auth").hidden = true;
   $("#workspace").hidden = false;
   $("#logout").hidden = false;
-  const [domains, goals, plan, rpg] = await Promise.all([
-    api("/api/v1/domains"), api("/api/v1/goals"), api("/api/v1/plans/preview"), api("/api/v1/rpg/status"),
+  const [domains, goals, plan, rpg, insights] = await Promise.all([
+    api("/api/v1/domains"), api("/api/v1/goals"), api("/api/v1/plans/preview"), api("/api/v1/rpg/status"), api("/api/v1/insights/progress"),
   ]);
   const domainSelect = $("#goal-form select");
   domainSelect.replaceChildren(...domains.map((domain) => new Option(domain.name, domain.code)));
@@ -37,7 +37,21 @@ async function loadWorkspace() {
   }));
   renderPlan(plan);
   $("#rpg-status").textContent = `Level ${rpg.level} · ${rpg.total_xp} XP · ${rpg.completed_tasks} completed tasks`;
+  renderInsights(insights);
   showNotice("Your private workspace is ready.");
+}
+
+function renderInsights(insights) {
+  const rows = [];
+  for (const goal of insights.goals) for (const metric of goal.metrics) {
+    const item = document.createElement("li");
+    const title = document.createElement("strong"); title.textContent = `${goal.title} · ${metric.name}`;
+    const progress = metric.progress_percent === null ? "Add baseline and current values to compare" : `${metric.progress_percent}% of stated range`;
+    const meta = document.createElement("small"); meta.textContent = `${metric.current_value ?? "—"} / ${metric.target_value} ${metric.unit} · ${progress} · ${metric.source}`;
+    item.append(title, meta); rows.push(item);
+  }
+  if (!rows.length) { const empty = document.createElement("li"); empty.textContent = "Add a goal with a metric to see progress."; rows.push(empty); }
+  $("#insights").replaceChildren(...rows);
 }
 
 function renderPlan(plan) {
@@ -69,6 +83,10 @@ $("#goal-form").addEventListener("submit", async (event) => {
 $("#refresh-goals").addEventListener("click", () => loadWorkspace().catch((error) => showNotice(error.message)));
 $("#refresh-plan").addEventListener("click", async () => {
   try { renderPlan(await api("/api/v1/plans/preview")); showNotice("Plan preview refreshed. Nothing was saved."); }
+  catch (error) { showNotice(error.message); }
+});
+$("#refresh-insights").addEventListener("click", async () => {
+  try { renderInsights(await api("/api/v1/insights/progress")); }
   catch (error) { showNotice(error.message); }
 });
 $("#core-form").addEventListener("submit", async (event) => {
