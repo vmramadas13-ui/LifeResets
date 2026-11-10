@@ -29,6 +29,9 @@ async function loadWorkspace() {
   ]);
   const domainSelect = $("#goal-form select");
   domainSelect.replaceChildren(...domains.map((domain) => new Option(domain.name, domain.code)));
+  const activeGoals = goals.filter((goal) => goal.status === "active");
+  $("#agent-goal").replaceChildren(...activeGoals.map((goal) => new Option(goal.title, goal.id)));
+  $("#agent-form button").disabled = activeGoals.length === 0;
   $("#goals").replaceChildren(...goals.map((goal) => {
     const item = document.createElement("li");
     const title = document.createElement("strong"); title.textContent = goal.title;
@@ -109,6 +112,13 @@ $("#core-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   try { const result = await api("/api/v1/core/respond", { method: "POST", body: JSON.stringify(formObject(event.currentTarget)) }); $("#core-answer").textContent = `${result.answer} Sources: ${result.provenance.join(", ") || "no saved records"}.`; }
   catch (error) { showNotice(error.message); }
+});
+$("#agent-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    const result = await api("/api/v1/agent/proposals/next-task", { method: "POST", body: JSON.stringify(formObject(event.currentTarget)) });
+    $("#agent-proposal").textContent = `${result.proposal.title} — approval required; no task was created.`;
+  } catch (error) { showNotice(error.message); }
 });
 $("#logout").addEventListener("click", async () => {
   try { await api("/api/v1/auth/logout", { method: "POST" }); }

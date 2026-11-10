@@ -86,6 +86,14 @@ GET /api/v1/insights/progress compares a metric's current value with its baselin
 
 GET /api/v1/notifications/inbox lists pending tasks due from today through the next 31 days. GET /api/v1/calendar.ics downloads the signed-in account's dated tasks as iCalendar events. Both are read-only and account-scoped. The app does not send push/email notifications or sync with an external calendar.
 
+## Bounded agent preview
+
+POST /api/v1/agent/proposals/next-task returns a single task proposal scoped to an active, owned goal. It cannot create records, access external services, or invoke tools. Execution is disabled pending a separate security review and approval design.
+
+## Operations and safe evolution
+
+The local runbook is [docs/operations.md](docs/operations.md); the project change gates are [docs/decisions/0003-safe-evolution.md](docs/decisions/0003-safe-evolution.md). This is not a production deployment: encrypted backups/restore, monitoring, MFA, password recovery, and deployed rate limiting remain required release gates.
+
 ## Web/PWA interface
 
 Open the API root (`/`) for a responsive, installable app shell. The interface supports local sign-in/out, goal creation and listing, plan preview, RPG status, and THE CORE fallback. The service worker caches only static shell files and never caches `/api/` responses. Offline data entry and push notifications are not enabled.

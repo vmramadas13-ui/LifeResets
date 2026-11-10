@@ -26,6 +26,7 @@
         <section class="card"><p class="eyebrow">VISIBLE PROGRESS</p><h2>Journey</h2><p id="rpg-status">Loading…</p></section>
         <section class="card"><div class="section-heading"><div><p class="eyebrow">YOUR MEASUREMENTS</p><h2>Progress</h2></div><button id="refresh-insights" class="quiet">Refresh</button></div><ul id="insights" class="record-list"></ul><p class="hint">Arithmetic comparisons only. Units and evidence source are shown.</p></section>
         <section class="card"><p class="eyebrow">REFLECTION</p><h2>THE CORE</h2><form id="core-form"><label>Ask a question<textarea name="question" rows="3" maxlength="1000" required></textarea></label><button>Review my saved context</button></form><p id="core-answer"></p><p class="hint">Local fallback summarizes saved records; no external AI provider is connected.</p></section>
+        <section class="card"><p class="eyebrow">USER CONTROL</p><h2>Next-step proposal</h2><form id="agent-form"><label>Active goal<select name="goal_id" id="agent-goal" required></select></label><button>Preview a proposal</button></form><p id="agent-proposal"></p><p class="hint">Preview only. The agent cannot create tasks, access external services, or run tools.</p></section>
       </div>
     </main>
     <script src="/static/app.js" defer></script>

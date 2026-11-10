@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
+from liferesets.agent import router as agent_router
 from liferesets.core import answer_read_only
 from liferesets.database import database_is_ready, get_db
 from liferesets.domain_data import router as domain_data_router
@@ -35,6 +36,7 @@ app.include_router(planning_router)
 app.include_router(rpg_router)
 app.include_router(insights_router)
 app.include_router(notifications_router)
+app.include_router(agent_router)
 
 
 @app.get("/", include_in_schema=False)
