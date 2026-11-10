@@ -72,6 +72,10 @@ POST /api/v1/core/respond accepts an authenticated question and returns a respon
 
 GET /api/v1/plans/preview accepts a start date and a 1–31 day horizon. It returns the signed-in user's pending tasks in that window plus prompts for active goals without tasks. Results are deterministic previews: they are not saved, assigned XP, or dispatched as actions. Creating/editing a plan remains a later step.
 
+## RPG progression (initial rules)
+
+GET /api/v1/rpg/status derives account-owned progression from completed tasks: 10 XP per completed task and 100 XP per level, with first-task and ten-task achievements. The response exposes the formula and frames the level as activity progress, not personal worth. Progression is derived from task state and is not yet a separate event ledger.
+
 For state-changing requests, read the lr-csrf cookie and send its value in the X-CSRF-Token header. The session cookie is HttpOnly.
 
 ## Database migrations

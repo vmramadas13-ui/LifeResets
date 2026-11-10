@@ -13,6 +13,7 @@ from liferesets.health import is_healthy
 from liferesets.identity import router as identity_router
 from liferesets.logging_config import configure_logging
 from liferesets.planning import router as planning_router
+from liferesets.rpg import router as rpg_router
 from liferesets.security import AuthenticatedWithCsrf
 from liferesets.settings import get_settings
 
@@ -23,6 +24,7 @@ register_error_handlers(app)
 app.include_router(identity_router)
 app.include_router(domain_data_router)
 app.include_router(planning_router)
+app.include_router(rpg_router)
 
 
 class CoreQuestion(BaseModel):
