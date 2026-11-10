@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#173b35">
+    <meta name="description" content="Private goal and habit workspace">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="stylesheet" href="/static/app.css">
+    <title>LifeResets</title>
+  </head>
+  <body>
+    <header><div><p class="eyebrow">YOUR PERSONAL WORKSPACE</p><h1>LifeResets</h1></div><button id="logout" class="quiet" hidden>Sign out</button></header>
+    <main>
+      <p id="notice" role="status" aria-live="polite">Sign in to open your private workspace.</p>
+      <section id="auth" class="card">
+        <h2>Sign in</h2>
+        <form id="login-form"><label>Email<input type="email" name="email" required autocomplete="username"></label><label>Password<input type="password" name="password" required autocomplete="current-password"></label><button>Sign in</button></form>
+      </section>
+      <div id="workspace" hidden>
+        <section class="card"><div class="section-heading"><div><p class="eyebrow">YOUR DIRECTION</p><h2>Goals</h2></div><button id="refresh-goals" class="quiet">Refresh</button></div><ul id="goals" class="record-list"></ul>
+          <details><summary>Add a goal</summary><form id="goal-form"><label>Domain<select name="domain" required></select></label><label>Goal title<input name="title" maxlength="160" required></label><label>Target date<input name="target_date" type="date"></label><button>Create goal</button></form></details>
+        </section>
+        <section class="card"><div class="section-heading"><div><p class="eyebrow">A SMALL NEXT STEP</p><h2>Plan preview</h2></div><button id="refresh-plan" class="quiet">Build preview</button></div><ul id="quests" class="record-list"></ul><p class="hint">Preview only. Nothing is saved or scheduled.</p></section>
+        <section class="card"><p class="eyebrow">VISIBLE PROGRESS</p><h2>Journey</h2><p id="rpg-status">Loading…</p></section>
+        <section class="card"><p class="eyebrow">REFLECTION</p><h2>THE CORE</h2><form id="core-form"><label>Ask a question<textarea name="question" rows="3" maxlength="1000" required></textarea></label><button>Review my saved context</button></form><p id="core-answer"></p><p class="hint">Local fallback summarizes saved records; no external AI provider is connected.</p></section>
+      </div>
+    </main>
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>

@@ -1,0 +1,9 @@
+{
+  "name": "LifeResets",
+  "short_name": "LifeResets",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f7f3",
+  "theme_color": "#173b35",
+  "description": "Private goal and habit workspace"
+}

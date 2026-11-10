@@ -1,7 +1,11 @@
 """FastAPI application entry point."""
 
+from pathlib import Path
+
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi import status as http_status
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
@@ -20,11 +24,34 @@ from liferesets.settings import get_settings
 settings = get_settings()
 configure_logging(settings.log_level)
 app = FastAPI(title=settings.app_name, version="0.1.0")
+WEB_DIR = Path(__file__).parent / "web"
+app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
 register_error_handlers(app)
 app.include_router(identity_router)
 app.include_router(domain_data_router)
 app.include_router(planning_router)
 app.include_router(rpg_router)
+
+
+@app.get("/", include_in_schema=False)
+def web_app() -> FileResponse:
+    return FileResponse(WEB_DIR / "index.html")
+
+
+@app.get("/manifest.webmanifest", include_in_schema=False)
+def web_manifest() -> FileResponse:
+    return FileResponse(
+        WEB_DIR / "manifest.webmanifest", media_type="application/manifest+json"
+    )
+
+
+@app.get("/sw.js", include_in_schema=False)
+def service_worker() -> FileResponse:
+    return FileResponse(
+        WEB_DIR / "sw.js",
+        media_type="application/javascript",
+        headers={"Service-Worker-Allowed": "/"},
+    )
 
 
 class CoreQuestion(BaseModel):
