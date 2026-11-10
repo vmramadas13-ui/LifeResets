@@ -3,6 +3,7 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+from liferesets import models as _models  # noqa: F401
 from liferesets.base import Base
 from liferesets.settings import get_settings
 

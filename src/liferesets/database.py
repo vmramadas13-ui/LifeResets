@@ -1,10 +1,13 @@
-"""Database engine creation and availability checks."""
+"""Database engine and session management."""
 
 import logging
+from collections.abc import Generator
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from liferesets.settings import get_settings
 
@@ -16,10 +19,30 @@ def create_database_engine(database_url: str) -> Engine:
     connect_args = (
         {"check_same_thread": False} if database_url.startswith("sqlite") else {}
     )
-    return create_engine(database_url, pool_pre_ping=True, connect_args=connect_args)
+    engine_options = {"pool_pre_ping": True, "connect_args": connect_args}
+    if database_url in {"sqlite://", "sqlite:///:memory:"}:
+        engine_options["poolclass"] = StaticPool
+    engine = create_engine(database_url, **engine_options)
+
+    if database_url.startswith("sqlite"):
+
+        @event.listens_for(engine, "connect")
+        def enable_sqlite_foreign_keys(connection, _record) -> None:
+            cursor = connection.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+
+    return engine
 
 
 engine = create_database_engine(get_settings().database_url)
+SessionFactory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+
+
+def get_db() -> Generator[Session, None, None]:
+    """Yield a database session for one request."""
+    with SessionFactory() as session:
+        yield session
 
 
 def database_is_ready(database_engine: Engine | None = None) -> bool:

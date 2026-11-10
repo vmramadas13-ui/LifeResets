@@ -3,6 +3,7 @@
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,6 +20,7 @@ class Settings(BaseSettings):
     app_name: str = "LifeResets API"
     database_url: str = "sqlite:///./liferesets.db"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    session_ttl_hours: int = Field(default=12, gt=0, le=168)
     environment: Literal["development", "test", "staging", "production"] = "development"
 
 

@@ -2,7 +2,7 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 
 from liferesets.database import create_database_engine, database_is_ready
 from liferesets.settings import get_settings
@@ -23,9 +23,23 @@ def test_migration_upgrade_and_rollback(tmp_path: Path, monkeypatch) -> None:
             revision = connection.execute(
                 text("SELECT version_num FROM alembic_version")
             ).scalar_one()
-        assert revision == "c5164ae25a00"
+        assert revision == "60c2191796d2"
+        assert {
+            "users",
+            "profiles",
+            "auth_sessions",
+            "consent_records",
+            "audit_events",
+        }.issubset(inspect(engine).get_table_names())
 
         command.downgrade(config, "base")
+        assert not {
+            "users",
+            "profiles",
+            "auth_sessions",
+            "consent_records",
+            "audit_events",
+        }.intersection(inspect(engine).get_table_names())
         with engine.connect() as connection:
             revision = connection.execute(
                 text("SELECT version_num FROM alembic_version")
