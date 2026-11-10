@@ -1,41 +1,49 @@
 # LifeResets
 
-LifeResets is a private, adaptive personal operating system for turning goals into measurable actions. This repository is being built in small, verified stages; the master blueprint defines the product scope, architecture, safety rules, and acceptance gates.
+LifeResets is a private, adaptive personal operating system for turning goals into measurable actions. Development follows the staged build sequence and acceptance gates in the master blueprint.
 
 ## Current stage
 
-The repository currently contains the initial Python package scaffold and a basic health check. API, database, identity, and product features have not been built yet.
+The repository contains the initial Python package scaffold and a basic health check. API, database, identity, and product features have not been built yet.
 
 ## Requirements
 
-- Python 3.12
-- [uv](https://docs.astral.sh/uv/)
 - Git
+- Python 3.12
+- [uv](https://docs.astral.sh/uv/getting-started/installation/)
 
 ## Set up locally
 
-From the repository root, run:
+From the repository root, create the project environment and install the exact dependencies recorded in `uv.lock`:
 
 ```bash
-uv sync --all-groups
+uv sync --locked --all-groups
 ```
 
-This creates or updates the project virtual environment from `uv.lock`, including development tools.
+The project virtual environment is created at `.venv/`. Use `uv run` for project commands so they run in that environment.
 
 ## Run checks
 
 ```bash
-uv run pytest
-uv run ruff check .
-uv run ruff format --check .
+uv run --locked pytest
+uv run --locked ruff check .
+uv run --locked ruff format --check .
 ```
+
+GitHub Actions runs the same checks for pushes and pull requests.
+
+## Development workflow
+
+1. Start a focused branch from `main` for each change.
+2. Keep implementation and tests together, and run all checks above.
+3. Review the diff for secrets, personal data, and unintended changes before committing.
+
+Do not commit `.env` files, credentials, or personal exports. `.env.example` is the safe template for documented configuration; no application settings are needed yet.
 
 ## Project layout
 
 ```text
-src/liferesets/   Python application package
-tests/            Automated tests
-.github/workflows/ci.yml  Continuous integration checks
+.github/workflows/  Continuous integration
+src/liferesets/     Python application package
+tests/              Automated tests
 ```
-
-Keep secrets and personal exports out of Git. Local environment files, virtual environments, and Python cache files should remain untracked.
