@@ -24,8 +24,8 @@ async function loadWorkspace() {
   $("#auth").hidden = true;
   $("#workspace").hidden = false;
   $("#logout").hidden = false;
-  const [domains, goals, plan, rpg, insights] = await Promise.all([
-    api("/api/v1/domains"), api("/api/v1/goals"), api("/api/v1/plans/preview"), api("/api/v1/rpg/status"), api("/api/v1/insights/progress"),
+  const [domains, goals, plan, rpg, insights, inbox] = await Promise.all([
+    api("/api/v1/domains"), api("/api/v1/goals"), api("/api/v1/plans/preview"), api("/api/v1/rpg/status"), api("/api/v1/insights/progress"), api("/api/v1/notifications/inbox"),
   ]);
   const domainSelect = $("#goal-form select");
   domainSelect.replaceChildren(...domains.map((domain) => new Option(domain.name, domain.code)));
@@ -38,7 +38,19 @@ async function loadWorkspace() {
   renderPlan(plan);
   $("#rpg-status").textContent = `Level ${rpg.level} · ${rpg.total_xp} XP · ${rpg.completed_tasks} completed tasks`;
   renderInsights(insights);
+  renderInbox(inbox);
   showNotice("Your private workspace is ready.");
+}
+
+function renderInbox(inbox) {
+  const rows = inbox.items.map((reminder) => {
+    const item = document.createElement("li");
+    const title = document.createElement("strong"); title.textContent = reminder.title;
+    const due = document.createElement("small"); due.textContent = `Due ${reminder.due_date}`;
+    item.append(title, due); return item;
+  });
+  if (!rows.length) { const empty = document.createElement("li"); empty.textContent = "No tasks due in the next week."; rows.push(empty); }
+  $("#inbox").replaceChildren(...rows);
 }
 
 function renderInsights(insights) {
@@ -87,6 +99,10 @@ $("#refresh-plan").addEventListener("click", async () => {
 });
 $("#refresh-insights").addEventListener("click", async () => {
   try { renderInsights(await api("/api/v1/insights/progress")); }
+  catch (error) { showNotice(error.message); }
+});
+$("#refresh-inbox").addEventListener("click", async () => {
+  try { renderInbox(await api("/api/v1/notifications/inbox")); }
   catch (error) { showNotice(error.message); }
 });
 $("#core-form").addEventListener("submit", async (event) => {

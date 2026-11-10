@@ -17,6 +17,7 @@ from liferesets.health import is_healthy
 from liferesets.identity import router as identity_router
 from liferesets.insights import router as insights_router
 from liferesets.logging_config import configure_logging
+from liferesets.notifications import router as notifications_router
 from liferesets.planning import router as planning_router
 from liferesets.rpg import router as rpg_router
 from liferesets.security import AuthenticatedWithCsrf
@@ -33,6 +34,7 @@ app.include_router(domain_data_router)
 app.include_router(planning_router)
 app.include_router(rpg_router)
 app.include_router(insights_router)
+app.include_router(notifications_router)
 
 
 @app.get("/", include_in_schema=False)

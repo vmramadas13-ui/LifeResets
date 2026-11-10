@@ -80,6 +80,10 @@ GET /api/v1/rpg/status derives account-owned progression from completed tasks: 1
 
 GET /api/v1/insights/progress compares a metric's current value with its baseline and target using `(current - baseline) / (target - baseline) * 100`. It preserves units and measurement source, returns no percentage when the baseline equals the target, and does not clamp values or make predictions. It is arithmetic only and makes no health or financial recommendations.
 
+## Calendar and reminders
+
+GET /api/v1/notifications/inbox lists pending tasks due from today through the next 31 days. GET /api/v1/calendar.ics downloads the signed-in account's dated tasks as iCalendar events. Both are read-only and account-scoped. The app does not send push/email notifications or sync with an external calendar.
+
 ## Web/PWA interface
 
 Open the API root (`/`) for a responsive, installable app shell. The interface supports local sign-in/out, goal creation and listing, plan preview, RPG status, and THE CORE fallback. The service worker caches only static shell files and never caches `/api/` responses. Offline data entry and push notifications are not enabled.
