@@ -2,6 +2,8 @@
 
 LifeResets is a private, adaptive personal operating system for turning goals into measurable actions. Development follows the staged build sequence and acceptance gates in the master blueprint.
 
+The sanitized PRD requirements catalog and post-build story traceability checklist are maintained in [docs/knowledge/product-requirements.md](docs/knowledge/product-requirements.md). The full PRD stays in the owner's local Downloads folder because it contains sensitive personal measurements.
+
 ## Current stage
 
 The repository contains the FastAPI application, database migrations, local account authentication, profile and consent APIs, account data export/deletion, minimal audit events, and the first domain data layer for goals, metrics, tasks, habits, and evidence.
