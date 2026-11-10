@@ -12,6 +12,7 @@ from liferesets.error_handlers import register_error_handlers
 from liferesets.health import is_healthy
 from liferesets.identity import router as identity_router
 from liferesets.logging_config import configure_logging
+from liferesets.planning import router as planning_router
 from liferesets.security import AuthenticatedWithCsrf
 from liferesets.settings import get_settings
 
@@ -21,6 +22,7 @@ app = FastAPI(title=settings.app_name, version="0.1.0")
 register_error_handlers(app)
 app.include_router(identity_router)
 app.include_router(domain_data_router)
+app.include_router(planning_router)
 
 
 class CoreQuestion(BaseModel):

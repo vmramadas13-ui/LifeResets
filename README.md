@@ -68,6 +68,10 @@ All domain records are scoped to the signed-in account. API creation and changes
 
 POST /api/v1/core/respond accepts an authenticated question and returns a response with context provenance and truncation metadata. It reads only the signed-in user's goals, tasks, habits, and evidence, with limits of 24 records and 6,000 context characters. The current deterministic fallback reports counts; it does not make generated recommendations. There are no tools or write actions. Provider selection and external data processing remain open; see docs/decisions/0002-core-provider-boundary.md.
 
+## Planning and quests (initial preview)
+
+GET /api/v1/plans/preview accepts a start date and a 1–31 day horizon. It returns the signed-in user's pending tasks in that window plus prompts for active goals without tasks. Results are deterministic previews: they are not saved, assigned XP, or dispatched as actions. Creating/editing a plan remains a later step.
+
 For state-changing requests, read the lr-csrf cookie and send its value in the X-CSRF-Token header. The session cookie is HttpOnly.
 
 ## Database migrations
