@@ -78,6 +78,9 @@ class User(Base):
     reviews: Mapped[list[Review]] = relationship(
         back_populates="user", cascade="all, delete-orphan", passive_deletes=True
     )
+    daily_plans: Mapped[list[DailyPlan]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", passive_deletes=True
+    )
 
 
 class Profile(Base):
@@ -265,6 +268,9 @@ class Task(Base):
     )
 
     user: Mapped[User] = relationship(back_populates="tasks")
+    daily_plan_items: Mapped[list[DailyPlanItem]] = relationship(
+        back_populates="task", cascade="all, delete-orphan", passive_deletes=True
+    )
 
 
 class Habit(Base):
@@ -412,3 +418,77 @@ class Review(Base):
     )
 
     user: Mapped[User] = relationship(back_populates="reviews")
+
+
+class DailyPlan(Base):
+    """A capacity-aware plan for one user and local calendar date."""
+
+    __tablename__ = "daily_plans"
+    __table_args__ = (
+        UniqueConstraint("user_id", "plan_date", name="unique_user_daily_plan"),
+        CheckConstraint(
+            "capacity_minutes BETWEEN 1 AND 1440", name="valid_plan_capacity"
+        ),
+        CheckConstraint("energy IN ('low','medium','high')", name="valid_plan_energy"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    plan_date: Mapped[date] = mapped_column(Date, nullable=False)
+    capacity_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    energy: Mapped[str] = mapped_column(String(8), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+    user: Mapped[User] = relationship(back_populates="daily_plans")
+    items: Mapped[list[DailyPlanItem]] = relationship(
+        back_populates="plan",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="DailyPlanItem.position",
+    )
+
+
+class DailyPlanItem(Base):
+    """A user-selected task and its status in a dated plan."""
+
+    __tablename__ = "daily_plan_items"
+    __table_args__ = (
+        UniqueConstraint("plan_id", "task_id", name="unique_task_in_daily_plan"),
+        CheckConstraint("position >= 0", name="valid_plan_item_position"),
+        CheckConstraint(
+            "planned_minutes BETWEEN 1 AND 1440", name="valid_item_minutes"
+        ),
+        CheckConstraint(
+            "status IN ('planned','completed','deferred','dropped')",
+            name="valid_daily_item_status",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    plan_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("daily_plans.id", ondelete="CASCADE"), index=True
+    )
+    task_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("tasks.id", ondelete="CASCADE"), index=True
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    planned_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(12), default="planned", nullable=False)
+    due_date_at_planning: Mapped[date | None] = mapped_column(Date, nullable=True)
+    deferred_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+    plan: Mapped[DailyPlan] = relationship(back_populates="items")
+    task: Mapped[Task] = relationship(back_populates="daily_plan_items")

@@ -6,7 +6,7 @@ The sanitized PRD requirements catalog and post-build story traceability checkli
 
 ## Current stage
 
-The repository contains a FastAPI backend and responsive PWA with local account authentication, consent-aware lifecycle records, eight-domain goals and metrics, tasks/habits/evidence, deterministic plan previews, activity-based RPG progression, read-only THE CORE fallback, progress calculations, local calendar export/reminders, and a proposal-only bounded agent. See the PRD traceability checklist for partial and deferred scope.
+The repository contains a FastAPI backend and responsive PWA with local account authentication, consent-aware lifecycle records, eight-domain goals and metrics, tasks/habits/evidence, persistent capacity-aware daily plans with user-controlled recovery suggestions, deterministic plan previews, activity-based RPG progression, read-only THE CORE fallback, progress calculations, local calendar export/reminders, and a proposal-only bounded agent. The UI follows the Inkpop visual direction and includes browser-persisted light/dark, reduced-motion, and standard-language controls. See [visual requirements](docs/design/visual-requirements.md) and the PRD traceability checklist for scope and gaps.
 
 ## Requirements
 
@@ -52,7 +52,7 @@ This is a local-first account foundation. MFA, password recovery, and deployed l
 - GET and PATCH /api/v1/profile read or update the signed-in profile.
 - GET and POST /api/v1/consents inspect or append consent records. Each grant or withdrawal is a new record.
 - GET /api/v1/audit lists minimal account events.
-- GET /api/v1/export returns account, profile, consent, audit, goals, metrics, tasks, habits, and evidence data without credentials.
+- GET /api/v1/export returns account, profile, consent, audit, goals, metrics, tasks, habits, evidence, lifecycle records, and daily plans without credentials.
 - DELETE /api/v1/account permanently removes the user's profile, sessions, consent records, domain data, and linked audit history.
 
 ## Goals and domain data API
@@ -72,7 +72,9 @@ POST /api/v1/core/respond accepts an authenticated question and returns a respon
 
 ## Planning and quests (initial preview)
 
-GET /api/v1/plans/preview accepts a start date and a 1–31 day horizon. It returns the signed-in user's pending tasks in that window plus prompts for active goals without tasks. Results are deterministic previews: they are not saved, assigned XP, or dispatched as actions. Creating/editing a plan remains a later step.
+GET /api/v1/plans/preview accepts a start date and a 1–31 day horizon. It returns the signed-in user's pending tasks in that window plus prompts for active goals without tasks. Results are deterministic previews: they are not saved, assigned XP, or dispatched as actions.
+
+GET/PUT `/api/v1/daily-plans/{date}` reads or saves a per-day selection of owned tasks, available minutes, and energy. A plan cannot exceed its stated capacity. PATCH `/api/v1/daily-plans/{date}/items/{id}` records completion, deferral, or removal. GET `/api/v1/daily-plans/{date}/recovery` previews eligible unfinished actions from earlier plans. It never carries tasks forward automatically, changes a task without a user choice, or applies a missed-day penalty. Daily plan data is included in account export and removed with the account.
 
 ## RPG progression (initial rules)
 
@@ -100,7 +102,7 @@ The local runbook is [docs/operations.md](docs/operations.md); the project chang
 
 ## Web/PWA interface
 
-Open the API root (`/`) for a responsive, installable app shell. The interface supports local sign-in/out, goal creation and listing, plan preview, RPG status, and THE CORE fallback. The service worker caches only static shell files and never caches `/api/` responses. Offline data entry and push notifications are not enabled.
+Open the API root (`/`) for a responsive, installable app shell. The interface supports local sign-in/out, goal and action creation, capacity- and energy-aware daily planning, explicit task decisions, recovery suggestions, and browser-persisted display preferences. The service worker caches only static shell files and never caches `/api/` responses. Offline data entry and push notifications are not enabled.
 
 For state-changing requests, read the lr-csrf cookie and send its value in the X-CSRF-Token header. The session cookie is HttpOnly.
 

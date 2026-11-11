@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from liferesets.daily_planning import export_daily_plans
 from liferesets.database import get_db
 from liferesets.domain_data import export_domain_data
 from liferesets.lifecycle import export_lifecycle_data
@@ -291,6 +292,7 @@ def export_account_data(
         ],
         "domain_data": export_domain_data(db, auth.user.id),
         "lifecycle_data": export_lifecycle_data(db, auth.user.id),
+        "daily_plans": export_daily_plans(db, auth.user.id),
     }
 
 
