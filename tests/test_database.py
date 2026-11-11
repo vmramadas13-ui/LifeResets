@@ -38,7 +38,7 @@ def test_migration_upgrade_and_rollback(tmp_path: Path, monkeypatch) -> None:
             revision = connection.execute(
                 text("SELECT version_num FROM alembic_version")
             ).scalar_one()
-        assert revision == "5afc2c97f91b"
+        assert revision == "cc4f0e04d4b0"
         assert {
             "users",
             "profiles",
@@ -61,6 +61,9 @@ def test_migration_upgrade_and_rollback(tmp_path: Path, monkeypatch) -> None:
             "skill_evidence",
             "agent_actions",
         }.issubset(inspect(engine).get_table_names())
+        assert "answer" in {
+            column["name"] for column in inspect(engine).get_columns("onboarding_steps")
+        }
 
         command.downgrade(config, "base")
         assert not {

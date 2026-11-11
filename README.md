@@ -98,7 +98,7 @@ On the THE CORE screen, on-device dictation starts only after a tap and only if 
 
 ## Onboarding, campaigns, and reviews
 
-GET/PATCH /api/v1/onboarding/awakening and /api/v1/onboarding/awakening/{step} provide resumable seven-step progress without collecting onboarding answers. POST/GET /api/v1/campaigns creates and lists 90-calendar-day campaigns; PATCH /api/v1/campaigns/{id} changes status. POST/GET /api/v1/reviews creates and lists weekly/monthly reviews; PATCH /api/v1/reviews/{id} updates review responses or status. Free-text responses require the latest `reflection_storage` consent grant; a later withdrawal blocks new/updated text. Lifecycle records appear in account export and are deleted with the account.
+GET/PATCH /api/v1/onboarding/awakening and /api/v1/onboarding/awakening/{step} provide seven one-at-a-time prompts with resumable status and optional answers. The 7-day cadence is encouraged but never blocks app use. Answers require the latest `awakening_storage` consent grant, appear in account export, and can be removed with DELETE /api/v1/onboarding/awakening/answers; consent withdrawal blocks new answers. POST/GET /api/v1/campaigns creates and lists 90-calendar-day campaigns; PATCH /api/v1/campaigns/{id} changes status. POST/GET /api/v1/reviews creates and lists weekly/monthly reviews; PATCH /api/v1/reviews/{id} updates review responses or status. Review text requires the latest `reflection_storage` consent grant; a later withdrawal blocks new/updated text. Lifecycle records are deleted with the account.
 
 ## Operations and safe evolution
 

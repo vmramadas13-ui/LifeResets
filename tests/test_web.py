@@ -25,6 +25,9 @@ def test_web_shell_and_pwa_files_are_served() -> None:
         assert 'id="voice-input"' in page.text
         assert 'id="speak-answer"' in page.text
         assert 'id="agent-review"' in page.text
+        assert 'id="awakening-form"' in page.text
+        assert 'id="awakening-consent"' in page.text
+        assert 'id="awakening-save-later"' in page.text
         assert 'rel="apple-touch-icon"' in page.text
         manifest = client.get("/manifest.webmanifest")
         assert manifest.status_code == 200

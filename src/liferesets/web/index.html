@@ -45,7 +45,22 @@
           <section class="saved-plan" aria-labelledby="saved-plan-title"><div class="task-pick-heading"><div><p class="eyebrow">YOUR SAVED CHOICES</p><h3 id="saved-plan-title">Plan actions</h3></div><span id="plan-energy-label" class="energy-pill">Steady energy</span></div><ul id="saved-plan-items" class="saved-plan-list" aria-live="polite"></ul><p id="saved-plan-empty" class="empty-note">Your saved actions will appear here.</p></section>
           <section class="recovery-panel" aria-labelledby="recovery-title"><div class="recovery-heading"><div><p class="eyebrow">WHEN YOU’RE READY TO RETURN</p><h3 id="recovery-title">Pick up what still matters</h3><p class="hint">Unfinished actions stay here as suggestions. Nothing moves into today unless you choose it.</p></div><button id="refresh-recovery" type="button" class="quiet">Check for suggestions</button></div><ul id="recovery-list" class="recovery-list" aria-live="polite"></ul></section>
         </section>
-        <section class="card"><p class="eyebrow">START WHERE YOU ARE</p><h2><span data-game-term="Awakening" data-standard-term="Onboarding">Awakening</span></h2><p class="hint">Seven steps. Skip or resume whenever you choose; this checklist does not collect your answers.</p><ol id="awakening" class="record-list"></ol></section>
+        <section id="awakening-section" class="card" aria-labelledby="awakening-title">
+          <p class="eyebrow">A GENTLE SEVEN-DAY START</p>
+          <h2 id="awakening-title"><span data-game-term="Awakening" data-standard-term="Onboarding">Awakening</span></h2>
+          <p class="hint">One short prompt for each day. Go at your pace, skip any prompt, or return later. You can use the app before finishing.</p>
+          <div class="awakening-progress" aria-live="polite"><strong id="awakening-day-label">Day 1 of 7</strong><div class="capacity-track" role="progressbar" aria-label="Awakening progress" aria-valuemin="0" aria-valuemax="7" aria-valuenow="0"><span id="awakening-progress-fill"></span></div></div>
+          <form id="awakening-form">
+            <h3 id="awakening-question-title"></h3>
+            <p id="awakening-prompt" class="hint"></p>
+            <label>Your reflection<textarea id="awakening-answer" name="answer" maxlength="1200" rows="4"></textarea></label>
+            <label class="check-row"><input id="awakening-consent" type="checkbox"><span>Allow LifeResets to save these reflections in this local app database.</span></label>
+            <p class="field-hint">Saved answers are included in your account export and are not sent to an AI provider by this flow. Unchecking stops new saves; use “Delete saved answers” to remove existing answers. The database is not encrypted at rest yet, so do not enter passwords, access codes, or exact health or financial details here.</p>
+            <div class="awakening-actions"><button id="awakening-previous" type="button" class="quiet">Previous</button><button id="awakening-skip" type="button" class="quiet">Skip this prompt</button><button id="awakening-save-later" type="button" class="quiet">Save for later</button><button type="submit" id="awakening-save">Complete and continue</button></div>
+          </form>
+          <p id="awakening-complete" class="empty-note" hidden>All seven prompts are complete. You can return to review or update any answer.</p>
+          <button id="awakening-delete" type="button" class="quiet">Delete saved answers</button>
+        </section>
         <section id="goals-section" class="card"><div class="section-heading"><div><p class="eyebrow">YOUR DIRECTION</p><h2>Goals</h2></div><button id="refresh-goals" class="quiet">Refresh</button></div><ul id="goals" class="record-list"></ul>
           <details><summary>Add a goal</summary><form id="goal-form"><label>Domain<select name="domain" required></select></label><label>Goal title<input name="title" maxlength="160" required></label><label>Target date<input name="target_date" type="date"></label><button>Create goal</button></form></details>
         </section>

@@ -354,7 +354,7 @@ class Evidence(Base):
 
 
 class OnboardingStep(Base):
-    """Progress marker for a resumable seven-part Awakening, with no answers."""
+    """Progress and optional consent-gated answer for one Awakening prompt."""
 
     __tablename__ = "onboarding_steps"
     __table_args__ = (
@@ -374,6 +374,7 @@ class OnboardingStep(Base):
     status: Mapped[str] = mapped_column(
         String(16), default="not_started", nullable=False
     )
+    answer: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
     )

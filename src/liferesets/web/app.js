@@ -5,6 +5,8 @@ let dailyPlan = null;
 let workspaceProgress = null;
 let coreReply = "";
 let activeAgentActionId = null;
+let awakeningData = null;
+let awakeningStepIndex = 0;
 
 function readPreference(name, fallback = "false") {
   try { return localStorage.getItem(`lr-${name}`) ?? fallback; }
@@ -412,21 +414,24 @@ function renderRecovery(recovery) {
   $("#recovery-list").replaceChildren(...rows);
 }
 
-function renderAwakening(awakening) {
-  const rows = awakening.steps.map((step) => {
-    const item = document.createElement("li");
-    const label = document.createElement("label"); label.textContent = `Step ${step.step} · ${step.status.replaceAll("_", " ")}`;
-    const select = document.createElement("select");
-    for (const status of ["in_progress", "completed", "skipped"]) select.add(new Option(status.replaceAll("_", " "), status));
-    select.value = step.status === "not_started" ? "in_progress" : step.status;
-    select.setAttribute("aria-label", `Update Awakening step ${step.step}`);
-    select.addEventListener("change", async () => {
-      try { await api(`/api/v1/onboarding/awakening/${step.step}`, { method: "PATCH", body: JSON.stringify({ status: select.value }) }); showNotice(`Step ${step.step} updated.`); }
-      catch (error) { showNotice(error.message); }
-    });
-    item.append(label, select); return item;
-  });
-  $("#awakening").replaceChildren(...rows);
+function renderAwakening(awakening, selectedIndex = null) {
+  awakeningData = awakening;
+  const unfinished = awakening.steps.findIndex((step) => !["completed", "skipped"].includes(step.status));
+  awakeningStepIndex = selectedIndex ?? (unfinished >= 0 ? unfinished : awakening.steps.length - 1);
+  const step = awakening.steps[awakeningStepIndex];
+  const resolved = awakening.steps.filter((item) => ["completed", "skipped"].includes(item.status)).length;
+  const progress = $("#awakening-progress-fill").parentElement;
+  $("#awakening-day-label").textContent = `Day ${step.day} of 7 · ${awakening.completed} completed`;
+  $("#awakening-progress-fill").style.width = `${(resolved / awakening.steps.length) * 100}%`;
+  progress.setAttribute("aria-valuenow", String(resolved));
+  $("#awakening-question-title").textContent = step.title;
+  $("#awakening-prompt").textContent = step.prompt;
+  $("#awakening-answer").value = step.answer || "";
+  $("#awakening-consent").checked = awakening.storage_consent;
+  $("#awakening-previous").disabled = awakeningStepIndex === 0;
+  $("#awakening-save").textContent = awakeningStepIndex === awakening.steps.length - 1 ? "Complete prompt" : "Complete and continue";
+  $("#awakening-skip").textContent = step.status === "skipped" ? "Keep skipped" : "Skip this prompt";
+  $("#awakening-complete").hidden = resolved !== awakening.steps.length;
 }
 
 function renderCampaigns(campaigns) {
@@ -537,6 +542,92 @@ $("#login-form").addEventListener("submit", async (event) => {
   event.preventDefault(); showNotice("Signing in…");
   try { await api("/api/v1/auth/login", { method: "POST", body: JSON.stringify(formObject(event.currentTarget)) }); await loadWorkspace(); }
   catch (error) { showNotice(error.message); }
+});
+
+$("#awakening-previous").addEventListener("click", () => {
+  if (awakeningData && awakeningStepIndex > 0) {
+    renderAwakening(awakeningData, awakeningStepIndex - 1);
+  }
+});
+
+$("#awakening-consent").addEventListener("change", async (event) => {
+  const checkbox = event.currentTarget;
+  try {
+    await api("/api/v1/consents", {
+      method: "POST",
+      body: JSON.stringify({
+        purpose: "awakening_storage",
+        granted: checkbox.checked,
+        policy_version: "v1",
+      }),
+    });
+    if (awakeningData) awakeningData.storage_consent = checkbox.checked;
+    showNotice(checkbox.checked
+      ? "Awakening answer storage is on for this local account."
+      : "New Awakening answers will not be saved. Existing answers remain until deleted.");
+  } catch (error) {
+    checkbox.checked = !checkbox.checked;
+    showNotice(error.message);
+  }
+});
+
+$("#awakening-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!awakeningData) return;
+  const step = awakeningData.steps[awakeningStepIndex];
+  const answer = $("#awakening-answer").value.trim();
+  try {
+    await api(`/api/v1/onboarding/awakening/${step.step}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: "completed", answer: answer || null }),
+    });
+    await loadWorkspace();
+    showNotice("Awakening progress saved. Continue whenever you’re ready.");
+  } catch (error) {
+    showNotice(error.message);
+  }
+});
+
+$("#awakening-save-later").addEventListener("click", async () => {
+  if (!awakeningData) return;
+  const step = awakeningData.steps[awakeningStepIndex];
+  const answer = $("#awakening-answer").value.trim();
+  try {
+    await api(`/api/v1/onboarding/awakening/${step.step}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: "in_progress", answer: answer || null }),
+    });
+    await loadWorkspace();
+    showNotice("Your progress is saved. Come back whenever you’re ready.");
+  } catch (error) {
+    showNotice(error.message);
+  }
+});
+
+$("#awakening-skip").addEventListener("click", async () => {
+  if (!awakeningData) return;
+  const step = awakeningData.steps[awakeningStepIndex];
+  try {
+    await api(`/api/v1/onboarding/awakening/${step.step}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: "skipped" }),
+    });
+    await loadWorkspace();
+    showNotice("Prompt skipped. You can return to it later.");
+  } catch (error) {
+    showNotice(error.message);
+  }
+});
+
+$("#awakening-delete").addEventListener("click", async () => {
+  if (!window.confirm("Delete all saved Awakening answers? This cannot be undone.")) return;
+  try {
+    const result = await api("/api/v1/onboarding/awakening/answers", { method: "DELETE" });
+    await loadWorkspace();
+    showNotice(`${result.deleted_answers} saved answer${result.deleted_answers === 1 ? "" : "s"} deleted.`);
+  } catch (error) {
+    showNotice(error.message);
+  }
 });
 
 $("#goal-form").addEventListener("submit", async (event) => {

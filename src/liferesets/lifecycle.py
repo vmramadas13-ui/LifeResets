@@ -31,6 +31,45 @@ ReviewStatus = Literal["draft", "completed"]
 class OnboardingUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     status: StepStatus
+    answer: str | None = Field(default=None, max_length=1200)
+
+
+AWAKENING_PROMPTS = (
+    {
+        "title": "Choose your focus",
+        "prompt": (
+            "Which parts of life would you most like to give attention to right now?"
+        ),
+    },
+    {
+        "title": "Notice what is working",
+        "prompt": "What is already helping you, and what would you like to keep?",
+    },
+    {
+        "title": "Understand your capacity",
+        "prompt": (
+            "What amount of time and energy usually feels realistic for a small change?"
+        ),
+    },
+    {
+        "title": "Spot the friction",
+        "prompt": "What tends to make it harder to follow through on plans?",
+    },
+    {
+        "title": "Find useful support",
+        "prompt": (
+            "What tools, routines, or kinds of support make a fresh start easier?"
+        ),
+    },
+    {
+        "title": "Pick a first step",
+        "prompt": "What is one small action that would feel manageable to try?",
+    },
+    {
+        "title": "Choose how to review",
+        "prompt": "How would you like to notice progress and adjust your plan?",
+    },
+)
 
 
 class CampaignCreate(BaseModel):
@@ -112,20 +151,28 @@ def _review_payload(review: Review) -> dict[str, object]:
 def get_awakening(
     auth: Authenticated, db: Session = Depends(get_db)
 ) -> dict[str, object]:
-    """Read resumable seven-step progress without collecting onboarding answers."""
+    """Read the resumable seven-prompt assessment and its consent state."""
     stored = {
-        item.step_number: item.status
+        item.step_number: item
         for item in db.scalars(
             select(OnboardingStep).where(OnboardingStep.user_id == auth.user.id)
         ).all()
     }
     steps = [
-        {"step": number, "status": stored.get(number, "not_started")}
-        for number in range(1, 8)
+        {
+            "step": number,
+            "day": number,
+            "title": prompt["title"],
+            "prompt": prompt["prompt"],
+            "status": stored[number].status if number in stored else "not_started",
+            "answer": stored[number].answer if number in stored else None,
+        }
+        for number, prompt in enumerate(AWAKENING_PROMPTS, start=1)
     ]
     return {
         "steps": steps,
         "completed": sum(item["status"] == "completed" for item in steps),
+        "storage_consent": _consent_active(db, auth.user.id, "awakening_storage"),
     }
 
 
@@ -138,6 +185,22 @@ def update_awakening_step(
 ) -> dict[str, object]:
     if not 1 <= step_number <= 7:
         raise HTTPException(status_code=404, detail="Onboarding step not found")
+    answer_was_sent = "answer" in changes.model_fields_set
+    answer = changes.answer.strip() if changes.answer else ""
+    if (
+        answer_was_sent
+        and answer
+        and not _consent_active(db, auth.user.id, "awakening_storage")
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "awakening_consent_required",
+                "message": (
+                    "Grant awakening_storage consent before saving Awakening answers."
+                ),
+            },
+        )
     step = db.scalar(
         select(OnboardingStep).where(
             OnboardingStep.user_id == auth.user.id,
@@ -151,9 +214,29 @@ def update_awakening_step(
         db.add(step)
     else:
         step.status = changes.status
+    if answer_was_sent:
+        step.answer = answer or None
     _audit(db, auth.user, "onboarding.step_updated")
     db.commit()
     return {"step": step_number, "status": step.status}
+
+
+@router.delete("/onboarding/awakening/answers")
+def delete_awakening_answers(
+    auth: AuthenticatedWithCsrf, db: Session = Depends(get_db)
+) -> dict[str, int]:
+    """Remove all saved prompt answers while preserving progress markers."""
+    steps = db.scalars(
+        select(OnboardingStep).where(OnboardingStep.user_id == auth.user.id)
+    ).all()
+    deleted = 0
+    for step in steps:
+        if step.answer is not None:
+            deleted += 1
+            step.answer = None
+    _audit(db, auth.user, "onboarding.answers_deleted")
+    db.commit()
+    return {"deleted_answers": deleted}
 
 
 @router.get("/campaigns")
@@ -305,7 +388,7 @@ def update_review(
 def export_lifecycle_data(
     db: Session, user_id: UUID
 ) -> dict[str, list[dict[str, object]]]:
-    """Export account-owned onboarding, campaigns, and reviews."""
+    """Export account-owned onboarding answers, campaigns, and reviews."""
     campaigns = db.scalars(select(Campaign).where(Campaign.user_id == user_id)).all()
     steps = db.scalars(
         select(OnboardingStep).where(OnboardingStep.user_id == user_id)
@@ -324,7 +407,13 @@ def export_lifecycle_data(
             for item in campaigns
         ],
         "onboarding_steps": [
-            {"step": item.step_number, "status": item.status} for item in steps
+            {
+                "step": item.step_number,
+                "status": item.status,
+                "answer": item.answer,
+                "updated_at": item.updated_at.isoformat(),
+            }
+            for item in steps
         ],
         "reviews": [_review_payload(item) for item in reviews],
     }

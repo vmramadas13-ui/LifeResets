@@ -214,6 +214,12 @@ details form { margin-top: 15px; }
 .capacity-track { height: 18px; overflow: hidden; border: 2px solid var(--ink); border-radius: 999px; background: var(--surface); }
 .capacity-track span { display: block; width: 0; height: 100%; border-right: 2px solid var(--ink); border-radius: 999px; background: var(--sakura); transition: width 160ms ease-out; }
 .capacity-track span.over-capacity { background: var(--sakura); }
+.awakening-progress { display: grid; gap: 8px; margin: 14px 0 20px; }
+.awakening-progress .capacity-track { max-width: 520px; }
+.awakening-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; }
+.awakening-actions button { min-height: 48px; }
+.awakening-actions #awakening-save { margin-left: auto; }
+#awakening-delete { margin-top: 8px; }
 .plan-summary .hint { grid-column: 2; margin-top: 0; }
 .task-pick-heading { margin: 4px 0 12px; }
 .selection-count, .energy-pill { padding: 6px 11px; border: 2px solid var(--ink); border-radius: 999px; background: var(--sky); color: var(--ink); font-size: .78rem; font-weight: 850; white-space: nowrap; }
@@ -338,6 +344,9 @@ section[id] { scroll-margin-top: 18px; }
   .task-option { grid-template-columns: minmax(0, 1fr) 82px; }
   .plan-actions { align-items: flex-start; flex-direction: column; }
   .plan-actions button { width: 100%; }
+  .awakening-actions { align-items: stretch; flex-direction: column; }
+  .awakening-actions button { width: 100%; }
+  .awakening-actions #awakening-save { margin-left: 0; }
   .task-create-form { grid-template-columns: 1fr; }
   .task-create-form label:first-child { grid-column: auto; }
   .task-create-form button { width: 100%; }

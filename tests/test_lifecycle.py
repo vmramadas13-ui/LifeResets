@@ -23,27 +23,110 @@ def _record_reflection_consent(client) -> None:
     assert response.status_code == 201
 
 
-def test_awakening_is_resumable_and_collects_no_answers(client, test_user) -> None:
+def _record_awakening_consent(client, granted: bool = True) -> None:
+    response = client.post(
+        "/api/v1/consents",
+        json={
+            "purpose": "awakening_storage",
+            "granted": granted,
+            "policy_version": "v1",
+        },
+    )
+    assert response.status_code == 201
+
+
+def test_awakening_guides_seven_prompts_and_requires_consent_for_answers(
+    client, test_user
+) -> None:
     _login(client, test_user)
     initial = client.get("/api/v1/onboarding/awakening").json()
     assert len(initial["steps"]) == 7
     assert initial["completed"] == 0
+    assert initial["steps"][0]["day"] == 1
+    assert initial["steps"][0]["title"] == "Choose your focus"
+    assert initial["steps"][0]["prompt"]
     assert initial["steps"][5]["status"] == "not_started"
+    assert initial["storage_consent"] is False
+    denied = client.patch(
+        "/api/v1/onboarding/awakening/1",
+        json={"status": "completed", "answer": "A test reflection"},
+    )
+    assert denied.status_code == 403
+
+    # Progress markers remain available without storing an answer.
     assert (
         client.patch(
             "/api/v1/onboarding/awakening/6", json={"status": "completed"}
         ).status_code
         == 200
     )
+    _record_awakening_consent(client)
+    saved = client.patch(
+        "/api/v1/onboarding/awakening/1",
+        json={"status": "completed", "answer": "A test reflection"},
+    )
+    assert saved.status_code == 200
+    draft = client.patch(
+        "/api/v1/onboarding/awakening/3",
+        json={"status": "in_progress", "answer": "A saved draft"},
+    )
+    assert draft.status_code == 200
     resumed = client.get("/api/v1/onboarding/awakening").json()
-    assert resumed["completed"] == 1
+    assert resumed["completed"] == 2
     assert resumed["steps"][5]["status"] == "completed"
-    assert db_no_answers(client)
+    assert resumed["steps"][0]["answer"] == "A test reflection"
+    assert resumed["steps"][2]["status"] == "in_progress"
+    assert resumed["steps"][2]["answer"] == "A saved draft"
+    assert resumed["storage_consent"] is True
+    exported = client.get("/api/v1/export").json()["lifecycle_data"]["onboarding_steps"]
+    assert {item["answer"] for item in exported} == {
+        None,
+        "A test reflection",
+        "A saved draft",
+    }
 
 
-def db_no_answers(client) -> bool:
-    result = client.get("/api/v1/onboarding/awakening").json()
-    return all(set(step) == {"step", "status"} for step in result["steps"])
+def test_awakening_withdrawal_blocks_answer_updates_and_delete_clears_answers(
+    client, test_user
+) -> None:
+    _login(client, test_user)
+    _record_awakening_consent(client)
+    assert (
+        client.patch(
+            "/api/v1/onboarding/awakening/2",
+            json={"status": "completed", "answer": "A private test note"},
+        ).status_code
+        == 200
+    )
+    _record_awakening_consent(client, granted=False)
+    blocked = client.patch(
+        "/api/v1/onboarding/awakening/2",
+        json={"status": "completed", "answer": "Changed after withdrawal"},
+    )
+    assert blocked.status_code == 403
+    assert (
+        client.get("/api/v1/onboarding/awakening").json()["steps"][1]["answer"]
+        == "A private test note"
+    )
+    deleted = client.delete("/api/v1/onboarding/awakening/answers")
+    assert deleted.status_code == 200
+    assert deleted.json() == {"deleted_answers": 1}
+    assert (
+        client.get("/api/v1/onboarding/awakening").json()["steps"][1]["answer"] is None
+    )
+
+
+def test_awakening_answer_length_and_step_bounds(client, test_user) -> None:
+    _login(client, test_user)
+    invalid_step = client.patch(
+        "/api/v1/onboarding/awakening/0", json={"status": "completed"}
+    )
+    assert invalid_step.status_code == 404
+    too_long = client.patch(
+        "/api/v1/onboarding/awakening/1",
+        json={"status": "completed", "answer": "x" * 1201},
+    )
+    assert too_long.status_code == 422
 
 
 def test_campaign_is_90_days_and_owned(client, test_user, db_session: Session) -> None:

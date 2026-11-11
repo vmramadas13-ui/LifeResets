@@ -429,6 +429,7 @@ def list_chronicle(
         "review.created": "Review started",
         "review.updated": "Review updated",
         "onboarding.step_updated": "Onboarding step updated",
+        "onboarding.answers_deleted": "Awakening answers deleted",
         "skill.created": "Skill added",
         "skill.updated": "Skill updated",
         "skill.evidence_added": "Skill evidence added",
