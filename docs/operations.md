@@ -19,9 +19,19 @@ Keep `.env` and database files local. Never include credentials, personal export
 
 Use a focused branch. Review schema and data export/deletion changes together. Require local checks and the GitHub Actions checks to pass. Merge only a green branch. Confirm the target revision and documented rollback behavior before applying migrations to any user data. Run the release against a disposable copy first.
 
-## Backup and restore status
+## Encrypted SQLite backup and restore
 
-Automated encrypted backups and a verified restore command are not implemented. `/api/v1/export` is a user data export, not a database backup or a restore mechanism. Treat backup/restore as a release blocker for hosted or irreplaceable data. Before enabling such a deployment, choose encrypted storage and retention, then test restoring a backup into an isolated environment and reconcile record counts.
+The CLI makes a consistent SQLite snapshot, derives a 256-bit key from the passphrase with Scrypt (`n=2^16`, `r=8`, `p=1`), and encrypts/authenticates it with AES-256-GCM. The backup file has owner-only permissions. Snapshot and restore use a temporary owner-only directory; the final restored SQLite file is unencrypted and has owner-only permissions. Keep the Mac's disk encryption enabled and restore only into a trusted local folder. Restore verifies authentication and database integrity before copying to a new destination. Use a unique destination path; the CLI never overwrites an existing file. The passphrase is entered interactively and is not stored with the backup. Keep it in a password manager: a lost passphrase cannot be recovered.
+
+```bash
+uv run --locked python -m liferesets.backup create "/path/to/new/liferesets-2026-11-11.lrbak"
+uv run --locked python -m liferesets.backup verify "/path/to/new/liferesets-2026-11-11.lrbak"
+uv run --locked python -m liferesets.backup restore "/path/to/new/liferesets-2026-11-11.lrbak" "/path/to/new/restore-test.sqlite3"
+```
+
+Backup creation reads the configured file-based SQLite database (`LIFERESETS_DATABASE_URL`, default `./liferesets.db`). Restore writes only to a new SQLite file, verifies the authentication tag, SQLite integrity, foreign keys, and migration marker, and preserves linked rows. It does not replace the configured database. To run a restored database, point `LIFERESETS_DATABASE_URL` at that new file; review its migration revision before any migration.
+
+PostgreSQL backup/restore, scheduled backups, automated retention/rotation, and restore monitoring are not implemented. `/api/v1/export` remains a user data export, not a database backup. Hosted deployment remains blocked until backups are automated, stored separately, and a documented restore drill reconciles record counts and checksums.
 
 ## Incident response
 

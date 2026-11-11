@@ -96,7 +96,7 @@ GET/PATCH /api/v1/onboarding/awakening and /api/v1/onboarding/awakening/{step} p
 
 ## Operations and safe evolution
 
-The local runbook is [docs/operations.md](docs/operations.md); the project change gates are [docs/decisions/0003-safe-evolution.md](docs/decisions/0003-safe-evolution.md). This is not a production deployment: encrypted backups/restore, monitoring, MFA, password recovery, and deployed rate limiting remain required release gates.
+The local runbook is [docs/operations.md](docs/operations.md); the project change gates are [docs/decisions/0003-safe-evolution.md](docs/decisions/0003-safe-evolution.md). Encrypted SQLite backup/restore is available through `python -m liferesets.backup`; PostgreSQL backups and automated retention remain unimplemented. Production hosting still requires monitoring, MFA, password recovery, and deployed rate limiting.
 
 ## Web/PWA interface
 
