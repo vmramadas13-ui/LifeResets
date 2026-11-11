@@ -31,17 +31,17 @@ Status values for final audit: **implemented**, **partial**, **deferred**, **blo
 | Story | Requirement area | Final status | Evidence / gap |
 | --- | --- | --- | --- |
 | LR-001 | Profile and preferred address | Partial | Profile API stores display name, timezone, and preferences; callsign/personal address flow is not in the UI. `tests/test_identity.py`. |
-| LR-002 | Resumable onboarding | Not started | No guided onboarding flow. |
+| LR-002 | Resumable onboarding | Partial | Seven-step resumable checklist, skip/complete/in-progress states, no answers collected. No guided prompts or baseline capture. `tests/test_lifecycle.py`. |
 | LR-003 | Editable life domains | Partial | Eight-code catalog is fixed; no rename, reorder, hide, or subareas. `src/liferesets/domain_data.py`. |
 | LR-004 | Goal baselines, targets, and edits | Partial | Owned goals and unit-labelled metrics support target/current/baseline and dates; confidence and revision history are absent. `tests/test_domain_data.py`. |
 | LR-005 | Daily capacity-aware plan | Partial | Deterministic weekly preview of pending tasks and goal prompts; no capacity, energy, calendar context, or daily edits. `tests/test_planning.py`. |
 | LR-006 | Habits and task recovery | Partial | Tasks and habit definitions support status, schedule, minimum action, and recovery text; recurrence execution and rescheduling history are absent. `tests/test_domain_data.py`. |
 | LR-007 | Multi-step quests | Partial | Preview labels tasks/prompts as quests; no multi-step quest model or lifecycle. `src/liferesets/planning.py`. |
-| LR-008 | Long-range campaign | Not started | No 90-day campaign model or retrospective. |
+| LR-008 | Long-range campaign | Partial | Owned 90-calendar-day campaign create/list/status lifecycle; no weekly arcs, checkpoints, or retrospective. `tests/test_lifecycle.py`. |
 | LR-009 | Calendar planning and approval | Partial | Authenticated read-only iCalendar export; no busy-time read or approval-based write. `tests/test_notifications.py`. |
-| LR-010 | Weekly review | Not started | No Tribunal/review flow. |
-| LR-011 | Monthly review | Not started | No Ascension/review flow. |
-| LR-012 | Reflection and recovery | Not started | No reflection entries or missed-time recovery flow. |
+| LR-010 | Weekly review | Partial | Weekly review drafts and consent-gated response storage; no guided review prompts or carry-forward planning. `tests/test_lifecycle.py`. |
+| LR-011 | Monthly review | Partial | Monthly review drafts and consent-gated response storage; no guided review prompts or carry-forward planning. `tests/test_lifecycle.py`. |
+| LR-012 | Reflection and recovery | Partial | Review responses require current `reflection_storage` consent; no missed-time recovery flow or supportive lapse prompts. `tests/test_lifecycle.py`. |
 | LR-013 | XP event ledger | Partial | XP is derived from completed tasks using a visible rule; no append-only event ledger, correction events, or rule versioning. `tests/test_rpg.py`. |
 | LR-014 | Ranks and attributes | Partial | Level only; ranks and attributes are not modeled. `src/liferesets/rpg.py`. |
 | LR-015 | Skills, class, titles, achievements | Partial | Two derived task-count achievements; no skill tree, class, titles, or skill evidence. `tests/test_rpg.py`. |
@@ -61,7 +61,7 @@ Status values for final audit: **implemented**, **partial**, **deferred**, **blo
 | LR-029 | Financial position tracking | Partial | Generic unit-labelled metrics only; no separate asset/liability ledger, net calculation, or assumptions. |
 | LR-030 | SaaS/project tracking | Partial | Generic goals/tasks/evidence only; no hypothesis, customer validation, release, or feedback model. |
 | LR-031 | Relationships and lifestyle goals | Partial | Generic qualitative domain goals are supported; no dedicated commitments/review model. |
-| LR-032 | Export and controlled deletion | Partial | Account export includes current profile, consents, audit, and domain records; hard deletion is password/CSRF/phrase protected. No deletion preview or backup-retention disclosure. `tests/test_identity.py`, `tests/test_domain_data.py`. |
+| LR-032 | Export and controlled deletion | Partial | Account export includes profile, consents, audit, domain, campaign, onboarding, and review records; hard deletion is password/CSRF/phrase protected and cascades lifecycle data. No deletion preview or backup-retention disclosure. `tests/test_identity.py`, `tests/test_domain_data.py`, `tests/test_lifecycle.py`. |
 | LR-033 | Backup and restore | Not started | Runbook explicitly records encrypted backup and restore as a release blocker. |
 | LR-034 | Authentication and security | Partial | Argon2id, revocable server-side sessions, CSRF, and account isolation are tested; MFA, password recovery, and deployed rate limiting are absent. |
 | LR-035 | Notification preferences and quiet hours | Partial | In-app due-task inbox only; no categories, quiet hours, push, or email. `tests/test_notifications.py`. |
@@ -94,6 +94,6 @@ Provider meaning/configuration; canonical domain labels; single-user versus SaaS
 
 ## Post-build verification snapshot
 
-Audit performed against the original local PRD after implementation stages 4–13 on 11 November 2026. This snapshot classifies all 40 backlog stories; it does not claim the full PRD is complete. Module-level acceptance implemented in this build is limited to the features described in the linked repository README and tests. Requirements marked partial/not started/deferred remain outstanding for a future scoped release. Latest local verification: 38 tests passed; Ruff lint and format checks passed; GitHub Actions passed for branch `feat/bounded-agent-operations` (run 42899108232). The `main` branch includes all green feature branches through that commit.
+Audit performed against the original local PRD after implementation stages 4–13 on 11 November 2026. This snapshot classifies all 40 backlog stories; it does not claim the full PRD is complete. Module-level acceptance implemented in this build is limited to the features described in the linked repository README and tests. Requirements marked partial/not started/deferred remain outstanding for a future scoped release. Latest local verification: 43 tests passed; Ruff lint and format checks passed; GitHub Actions passed for branch `feat/bounded-agent-operations` (run 42899108232). Lifecycle changes are currently in progress on `feat/campaign-reviews` and will receive a CI run before merge.
 
 Known release blockers: no encrypted backup/restore, hosted hardening, production deployment, provider/calendar write integration, offline synchronization, user-approved Life Score, or completed accessibility/recovery review. These limits are also recorded in `docs/operations.md` and `docs/decisions/0002-core-provider-boundary.md`.

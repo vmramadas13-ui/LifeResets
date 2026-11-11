@@ -18,6 +18,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    UniqueConstraint,
     Uuid,
     func,
 )
@@ -66,6 +67,15 @@ class User(Base):
         back_populates="user", cascade="all, delete-orphan", passive_deletes=True
     )
     evidence: Mapped[list[Evidence]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", passive_deletes=True
+    )
+    campaigns: Mapped[list[Campaign]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", passive_deletes=True
+    )
+    onboarding_steps: Mapped[list[OnboardingStep]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", passive_deletes=True
+    )
+    reviews: Mapped[list[Review]] = relationship(
         back_populates="user", cascade="all, delete-orphan", passive_deletes=True
     )
 
@@ -320,3 +330,85 @@ class Evidence(Base):
     )
 
     user: Mapped[User] = relationship(back_populates="evidence")
+
+
+class OnboardingStep(Base):
+    """Progress marker for a resumable seven-part Awakening, with no answers."""
+
+    __tablename__ = "onboarding_steps"
+    __table_args__ = (
+        UniqueConstraint("user_id", "step_number", name="unique_user_onboarding_step"),
+        CheckConstraint("step_number BETWEEN 1 AND 7", name="valid_onboarding_step"),
+        CheckConstraint(
+            "status IN ('not_started','in_progress','completed','skipped')",
+            name="valid_onboarding_status",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    step_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16), default="not_started", nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+    user: Mapped[User] = relationship(back_populates="onboarding_steps")
+
+
+class Campaign(Base):
+    """A user-owned, time-bounded focus campaign."""
+
+    __tablename__ = "campaigns"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('active','paused','completed','archived')",
+            name="valid_campaign_status",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    objective: Mapped[str] = mapped_column(String(2000), nullable=False)
+    starts_on: Mapped[date] = mapped_column(Date, nullable=False)
+    ends_on: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="active", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+    user: Mapped[User] = relationship(back_populates="campaigns")
+
+
+class Review(Base):
+    """Private weekly/monthly reflection with consent-gated response text."""
+
+    __tablename__ = "reviews"
+    __table_args__ = (
+        CheckConstraint("cadence IN ('weekly','monthly')", name="valid_review_cadence"),
+        CheckConstraint("status IN ('draft','completed')", name="valid_review_status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    cadence: Mapped[str] = mapped_column(String(12), nullable=False)
+    period_start: Mapped[date] = mapped_column(Date, nullable=False)
+    period_end: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(String(12), default="draft", nullable=False)
+    responses: Mapped[dict[str, str]] = mapped_column(
+        JSON, default=dict, nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+    user: Mapped[User] = relationship(back_populates="reviews")

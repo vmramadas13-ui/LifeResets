@@ -24,8 +24,9 @@ async function loadWorkspace() {
   $("#auth").hidden = true;
   $("#workspace").hidden = false;
   $("#logout").hidden = false;
-  const [domains, goals, plan, rpg, insights, inbox] = await Promise.all([
+  const [domains, goals, plan, rpg, insights, inbox, awakening, campaigns, reviews] = await Promise.all([
     api("/api/v1/domains"), api("/api/v1/goals"), api("/api/v1/plans/preview"), api("/api/v1/rpg/status"), api("/api/v1/insights/progress"), api("/api/v1/notifications/inbox"),
+    api("/api/v1/onboarding/awakening"), api("/api/v1/campaigns"), api("/api/v1/reviews"),
   ]);
   const domainSelect = $("#goal-form select");
   domainSelect.replaceChildren(...domains.map((domain) => new Option(domain.name, domain.code)));
@@ -42,7 +43,47 @@ async function loadWorkspace() {
   $("#rpg-status").textContent = `Level ${rpg.level} · ${rpg.total_xp} XP · ${rpg.completed_tasks} completed tasks`;
   renderInsights(insights);
   renderInbox(inbox);
+  renderAwakening(awakening);
+  renderCampaigns(campaigns);
+  renderReviews(reviews);
   showNotice("Your private workspace is ready.");
+}
+
+function renderAwakening(awakening) {
+  const rows = awakening.steps.map((step) => {
+    const item = document.createElement("li");
+    const label = document.createElement("label"); label.textContent = `Step ${step.step} · ${step.status.replaceAll("_", " ")}`;
+    const select = document.createElement("select");
+    for (const status of ["in_progress", "completed", "skipped"]) select.add(new Option(status.replaceAll("_", " "), status));
+    select.value = step.status === "not_started" ? "in_progress" : step.status;
+    select.setAttribute("aria-label", `Update Awakening step ${step.step}`);
+    select.addEventListener("change", async () => {
+      try { await api(`/api/v1/onboarding/awakening/${step.step}`, { method: "PATCH", body: JSON.stringify({ status: select.value }) }); showNotice(`Step ${step.step} updated.`); }
+      catch (error) { showNotice(error.message); }
+    });
+    item.append(label, select); return item;
+  });
+  $("#awakening").replaceChildren(...rows);
+}
+
+function renderCampaigns(campaigns) {
+  const rows = campaigns.map((campaign) => {
+    const item = document.createElement("li");
+    const title = document.createElement("strong"); title.textContent = campaign.title;
+    const detail = document.createElement("small"); detail.textContent = `${campaign.starts_on} to ${campaign.ends_on} · ${campaign.status}`;
+    item.append(title, detail); return item;
+  });
+  $("#campaigns").replaceChildren(...rows);
+}
+
+function renderReviews(reviews) {
+  const rows = reviews.map((review) => {
+    const item = document.createElement("li");
+    const title = document.createElement("strong"); title.textContent = `${review.cadence} review · ${review.period_start} to ${review.period_end}`;
+    const detail = document.createElement("small"); detail.textContent = review.status;
+    item.append(title, detail); return item;
+  });
+  $("#reviews").replaceChildren(...rows);
 }
 
 function renderInbox(inbox) {
@@ -92,6 +133,18 @@ $("#goal-form").addEventListener("submit", async (event) => {
   const payload = formObject(event.currentTarget);
   if (!payload.target_date) delete payload.target_date;
   try { await api("/api/v1/goals", { method: "POST", body: JSON.stringify(payload) }); event.currentTarget.reset(); await loadWorkspace(); showNotice("Goal saved."); }
+  catch (error) { showNotice(error.message); }
+});
+
+$("#campaign-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try { await api("/api/v1/campaigns", { method: "POST", body: JSON.stringify(formObject(event.currentTarget)) }); event.currentTarget.reset(); await loadWorkspace(); showNotice("90-day campaign saved."); }
+  catch (error) { showNotice(error.message); }
+});
+
+$("#review-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try { await api("/api/v1/reviews", { method: "POST", body: JSON.stringify({ ...formObject(event.currentTarget), status: "draft" }) }); await loadWorkspace(); showNotice("Review draft started."); }
   catch (error) { showNotice(error.message); }
 });
 

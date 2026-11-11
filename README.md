@@ -6,7 +6,7 @@ The sanitized PRD requirements catalog and post-build story traceability checkli
 
 ## Current stage
 
-The repository contains the FastAPI application, database migrations, local account authentication, profile and consent APIs, account data export/deletion, minimal audit events, and the first domain data layer for goals, metrics, tasks, habits, and evidence.
+The repository contains a FastAPI backend and responsive PWA with local account authentication, consent-aware lifecycle records, eight-domain goals and metrics, tasks/habits/evidence, deterministic plan previews, activity-based RPG progression, read-only THE CORE fallback, progress calculations, local calendar export/reminders, and a proposal-only bounded agent. See the PRD traceability checklist for partial and deferred scope.
 
 ## Requirements
 
@@ -89,6 +89,10 @@ GET /api/v1/notifications/inbox lists pending tasks due from today through the n
 ## Bounded agent preview
 
 POST /api/v1/agent/proposals/next-task returns a single task proposal scoped to an active, owned goal. It cannot create records, access external services, or invoke tools. Execution is disabled pending a separate security review and approval design.
+
+## Onboarding, campaigns, and reviews
+
+GET/PATCH /api/v1/onboarding/awakening and /api/v1/onboarding/awakening/{step} provide resumable seven-step progress without collecting onboarding answers. POST/GET /api/v1/campaigns creates and lists 90-calendar-day campaigns; PATCH /api/v1/campaigns/{id} changes status. POST/GET /api/v1/reviews creates and lists weekly/monthly reviews; PATCH /api/v1/reviews/{id} updates review responses or status. Free-text responses require the latest `reflection_storage` consent grant; a later withdrawal blocks new/updated text. Lifecycle records appear in account export and are deleted with the account.
 
 ## Operations and safe evolution
 

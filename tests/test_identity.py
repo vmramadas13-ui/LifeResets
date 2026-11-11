@@ -6,8 +6,11 @@ from sqlalchemy.orm import Session
 from liferesets.models import (
     AuditEvent,
     AuthSession,
+    Campaign,
     ConsentRecord,
+    OnboardingStep,
     Profile,
+    Review,
     User,
 )
 
@@ -215,6 +218,47 @@ def test_account_deletion_requires_password_and_confirmation(
     client, db_session: Session, test_user: dict[str, object]
 ) -> None:
     _login(client, test_user)
+    assert (
+        client.patch(
+            "/api/v1/onboarding/awakening/1", json={"status": "completed"}
+        ).status_code
+        == 200
+    )
+    assert (
+        client.post(
+            "/api/v1/campaigns",
+            json={
+                "title": "Test campaign",
+                "objective": "Test",
+                "starts_on": "2026-01-01",
+                "ends_on": "2026-03-31",
+            },
+        ).status_code
+        == 201
+    )
+    assert (
+        client.post(
+            "/api/v1/consents",
+            json={
+                "purpose": "reflection_storage",
+                "granted": True,
+                "policy_version": "v1",
+            },
+        ).status_code
+        == 201
+    )
+    assert (
+        client.post(
+            "/api/v1/reviews",
+            json={
+                "cadence": "weekly",
+                "period_start": "2026-01-05",
+                "period_end": "2026-01-11",
+                "responses": {"wins": "Private test"},
+            },
+        ).status_code
+        == 201
+    )
     other_user = User(email="other@example.com", password_hash="not-used-in-this-test")
     other_user.profile = Profile(display_name="Other", timezone="UTC")
     other_user.consents.append(
@@ -249,6 +293,9 @@ def test_account_deletion_requires_password_and_confirmation(
     assert db_session.scalar(select(func.count()).select_from(User)) == 1
     assert db_session.scalar(select(func.count()).select_from(Profile)) == 1
     assert db_session.scalar(select(func.count()).select_from(ConsentRecord)) == 1
+    assert db_session.scalar(select(func.count()).select_from(Campaign)) == 0
+    assert db_session.scalar(select(func.count()).select_from(OnboardingStep)) == 0
+    assert db_session.scalar(select(func.count()).select_from(Review)) == 0
     deletion_event = db_session.scalar(
         select(AuditEvent).where(AuditEvent.action == "account.deleted")
     )
