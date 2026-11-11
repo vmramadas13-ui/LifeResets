@@ -53,7 +53,7 @@ def test_user(db_session: Session) -> dict[str, object]:
     email = "vee@example.com"
     password = "correct horse battery staple number 47"
     user = User(email=email, password_hash=hash_password(password))
-    user.profile = Profile(display_name="Vee", timezone="Asia/Kolkata")
+    user.profile = Profile(display_name="Example User", timezone="Asia/Kolkata")
     db_session.add(user)
     db_session.commit()
     return {"id": user.id, "email": email, "password": password}

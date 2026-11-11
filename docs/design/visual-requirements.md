@@ -19,7 +19,18 @@ The daily planner is the primary return screen. It should make the date, availab
 
 The product requirements document governs behavior and accessibility. The visual concept does not change data collection, planning, progression, privacy, or recovery rules. Do not introduce streak loss, negative rewards, shame language, or automatic task carry-forward. Game terms and illustrations remain optional presentation layers; plain labels preserve the same functionality.
 
-The concept's mobile-first audience and streak assumptions are not adopted as product requirements. LifeResets remains a Mac-first, responsive personal workspace. Do not use existing anime characters, settings, logos, or art.
+The user clarified on 11 November 2026 that iPhone is the primary device; this supersedes the earlier Mac-first assumption. LifeResets is iPhone-first with full Mac support. Keep streak assumptions out of the product. Do not use existing anime characters, settings, logos, or art.
+
+Discovery Q104/Q112/Q114 also asks for a dark, cinematic System interface and an evolving original Hunter character. This differs from the supplied warm Inkpop visual concept. Keep the current daily planner calm and legible; record a separate, optional System/character appearance as future design work. It must preserve the same controls and behavior and use original art. Neither the optional skin nor cinematic effects are implemented yet.
+
+## iPhone priority
+
+- Keep primary actions reachable with one hand; use a compact bottom navigation for the main screens.
+- Respect display cutouts and home-indicator safe areas; keep controls at least 44 CSS pixels high.
+- Avoid horizontal scrolling and prevent iOS input zoom by keeping form text at 16px or larger.
+- Keep the PWA useful at narrow phone widths and in standalone display mode; Mac remains a supported workspace.
+- Voice input must use confirmed on-device recognition only. If unavailable, point to iOS keyboard dictation; never silently fall back to cloud recognition.
+- Spoken answers start only after the user taps Read aloud.
 
 ## Implemented in the daily-planning increment
 
@@ -27,5 +38,7 @@ The concept's mobile-first audience and streak assumptions are not adopted as pr
 - Responsive capacity and energy planner with clear task selection, completion, deferral, and drop controls.
 - Light/dark appearance, reduced-motion, and standard-language controls saved in the current browser.
 - Recovery suggestions that require an explicit user choice, with no missed-day penalty or automatic carry-forward.
+- iPhone-safe viewport, bottom navigation, and a compact character profile with skills, milestones, and visible rank rules.
+- Voice entry uses the Web Speech API only when its on-device mode is available; the transcript stays editable and unsaved until submission.
 
-Animation, haptics, a full mascot expression set, theme customization, scalable text validation to 200%, and user testing remain future design work.
+Animation, haptics, a full mascot expression set, theme customization, scalable text validation to 200%, physical iPhone screen-reader testing, and user testing remain future design work.

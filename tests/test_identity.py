@@ -138,10 +138,10 @@ def test_profile_updates_are_owned_and_require_csrf(
     client.headers.update({"X-CSRF-Token": client.cookies.get("lr-csrf")})
     response = client.patch(
         "/api/v1/profile",
-        json={"display_name": "Groot", "timezone": "Asia/Kolkata"},
+        json={"display_name": "Test Hunter", "timezone": "Asia/Kolkata"},
     )
     assert response.status_code == 200
-    assert response.json()["display_name"] == "Groot"
+    assert response.json()["display_name"] == "Test Hunter"
 
     null_timezone = client.patch("/api/v1/profile", json={"timezone": None})
     assert null_timezone.status_code == 422
@@ -153,7 +153,7 @@ def test_profile_updates_are_owned_and_require_csrf(
     assert forged.status_code == 422
     db_session.expire_all()
     profile = db_session.get(Profile, test_user["id"])
-    assert profile is not None and profile.display_name == "Groot"
+    assert profile is not None and profile.display_name == "Test Hunter"
 
 
 def test_consent_records_are_append_only_and_account_scoped(
@@ -192,7 +192,7 @@ def test_export_includes_user_data_but_excludes_credentials(
     client, test_user: dict[str, object]
 ) -> None:
     _login(client, test_user)
-    client.patch("/api/v1/profile", json={"display_name": "Groot"})
+    client.patch("/api/v1/profile", json={"display_name": "Test Hunter"})
     client.post(
         "/api/v1/consents",
         json={"purpose": "ai_processing", "granted": True, "policy_version": "v1"},
@@ -204,7 +204,7 @@ def test_export_includes_user_data_but_excludes_credentials(
     payload = response.json()
     assert payload["account"]["email"] == test_user["email"]
     assert payload["account"]["created_at"].endswith("+00:00")
-    assert payload["profile"]["display_name"] == "Groot"
+    assert payload["profile"]["display_name"] == "Test Hunter"
     assert payload["profile"]["updated_at"].endswith("+00:00")
     assert payload["consents"][0]["purpose"] == "ai_processing"
     assert payload["consents"][0]["id"]

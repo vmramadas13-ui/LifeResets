@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from liferesets.database import get_db
 from liferesets.models import AuditEvent, Evidence, Goal, GoalMetric, Habit, Task, User
+from liferesets.progression import record_task_transition
 from liferesets.security import Authenticated, AuthenticatedWithCsrf
 
 router = APIRouter(prefix="/api/v1", tags=["goals and evidence"])
@@ -497,6 +498,10 @@ def update_task(
     )
     if task is None:
         raise _not_found()
+    old_status = task.status
+    if old_status == changes.status:
+        return _task_payload(task)
+    record_task_transition(db, task, old_status, changes.status)
     task.status = changes.status
     task.completed_at = datetime.now(UTC) if changes.status == "completed" else None
     _audit(db, auth.user, "task.updated")

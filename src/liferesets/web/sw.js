@@ -1,5 +1,5 @@
-const CACHE = "liferesets-shell-v2";
-const SHELL = ["/", "/static/app.css", "/static/app.js", "/manifest.webmanifest"];
+const CACHE = "liferesets-shell-v3";
+const SHELL = ["/", "/static/app.css", "/static/app.js", "/manifest.webmanifest", "/static/apple-touch-icon.png", "/static/app-icon-192.png", "/static/app-icon-512.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)));

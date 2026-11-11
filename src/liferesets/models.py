@@ -81,6 +81,21 @@ class User(Base):
     daily_plans: Mapped[list[DailyPlan]] = relationship(
         back_populates="user", cascade="all, delete-orphan", passive_deletes=True
     )
+    progression_settings: Mapped[ProgressionSettings | None] = relationship(
+        back_populates="user", cascade="all, delete-orphan", passive_deletes=True
+    )
+    progression_events: Mapped[list[ProgressionEvent]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", passive_deletes=True
+    )
+    skills: Mapped[list[Skill]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", passive_deletes=True
+    )
+    skill_evidence: Mapped[list[SkillEvidence]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", passive_deletes=True
+    )
+    agent_actions: Mapped[list[AgentAction]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", passive_deletes=True
+    )
 
 
 class Profile(Base):
@@ -492,3 +507,166 @@ class DailyPlanItem(Base):
 
     plan: Mapped[DailyPlan] = relationship(back_populates="items")
     task: Mapped[Task] = relationship(back_populates="daily_plan_items")
+
+
+class ProgressionSettings(Base):
+    """Editable character display and pause state for the optional game layer."""
+
+    __tablename__ = "progression_settings"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    hunter_name: Mapped[str] = mapped_column(
+        String(80), default="Hunter", nullable=False
+    )
+    callsign: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    paused: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    ruleset_version: Mapped[str] = mapped_column(
+        String(32), default="starter-1", nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+    user: Mapped[User] = relationship(back_populates="progression_settings")
+
+
+class ProgressionEvent(Base):
+    """Append-only, versioned XP entry or correction for one account."""
+
+    __tablename__ = "progression_events"
+    __table_args__ = (
+        CheckConstraint(
+            "event_type IN ('task_completed','task_reopened','correction')",
+            name="valid_progression_event_type",
+        ),
+        CheckConstraint("xp_delta BETWEEN -10000 AND 10000", name="valid_xp_delta"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    task_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("tasks.id", ondelete="SET NULL"), index=True, nullable=True
+    )
+    correction_of_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("progression_events.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    xp_delta: Mapped[int] = mapped_column(Integer, nullable=False)
+    ruleset_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    reason: Mapped[str] = mapped_column(String(240), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+    user: Mapped[User] = relationship(back_populates="progression_events")
+
+
+class Skill(Base):
+    """User-defined skill with an explicit definition and confidence level."""
+
+    __tablename__ = "skills"
+    __table_args__ = (
+        UniqueConstraint("user_id", "name", name="unique_user_skill_name"),
+        CheckConstraint("level BETWEEN 1 AND 10", name="valid_skill_level"),
+        CheckConstraint("confidence BETWEEN 0 AND 100", name="valid_skill_confidence"),
+        CheckConstraint(
+            "domain IS NULL OR domain IN ('career','fitness','finance','discipline',"
+            "'learning','mental_wellness','relationships','lifestyle')",
+            name="valid_skill_domain",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    domain: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    definition: Mapped[str] = mapped_column(String(500), nullable=False)
+    level: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    confidence: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+    user: Mapped[User] = relationship(back_populates="skills")
+    evidence: Mapped[list[SkillEvidence]] = relationship(
+        back_populates="skill", cascade="all, delete-orphan", passive_deletes=True
+    )
+
+
+class SkillEvidence(Base):
+    """User-recorded, unverified evidence supporting a skill level."""
+
+    __tablename__ = "skill_evidence"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    skill_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("skills.id", ondelete="CASCADE"), index=True
+    )
+    summary: Mapped[str] = mapped_column(String(500), nullable=False)
+    artifact_ref: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    confidence: Mapped[int] = mapped_column(Integer, default=50, nullable=False)
+    captured_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+    user: Mapped[User] = relationship(back_populates="skill_evidence")
+    skill: Mapped[Skill] = relationship(back_populates="evidence")
+
+
+class AgentAction(Base):
+    """A proposed local action with its user approval and reversible result."""
+
+    __tablename__ = "agent_actions"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('proposed','approved','rejected','undone')",
+            name="valid_agent_action_status",
+        ),
+        CheckConstraint(
+            "risk_tier = 'local_reversible'", name="valid_agent_action_risk_tier"
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    goal_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("goals.id", ondelete="CASCADE"), index=True
+    )
+    result_task_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True
+    )
+    action_type: Mapped[str] = mapped_column(
+        String(40), default="create_task", nullable=False
+    )
+    risk_tier: Mapped[str] = mapped_column(
+        String(32), default="local_reversible", nullable=False
+    )
+    status: Mapped[str] = mapped_column(String(16), default="proposed", nullable=False)
+    proposal: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    approved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    undone_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    user: Mapped[User] = relationship(back_populates="agent_actions")

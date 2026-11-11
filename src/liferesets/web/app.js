@@ -3,6 +3,8 @@ const notice = $("#notice");
 let workspaceTasks = [];
 let dailyPlan = null;
 let workspaceProgress = null;
+let coreReply = "";
+let activeAgentActionId = null;
 
 function readPreference(name, fallback = "false") {
   try { return localStorage.getItem(`lr-${name}`) ?? fallback; }
@@ -32,9 +34,104 @@ function applyDisplayPreferences() {
 
 function renderProgress(rpg) {
   if (!rpg) return;
+  const character = rpg.character || {};
+  $("#character-title").textContent = character.hunter_name || "Hunter";
+  $("#character-callsign").textContent = character.callsign
+    ? `Callsign · ${character.callsign}`
+    : "Choose a callsign if you want one.";
+  $("#character-rank").textContent = rpg.rank || "E";
+  $("#character-level").textContent = `Level ${rpg.level}`;
+  $("#character-xp-label").textContent = `${rpg.xp_in_level} / ${rpg.xp_per_level} XP`;
+  const fill = $("#character-xp-fill");
+  fill.style.width = `${rpg.xp_in_level}%`;
+  const progress = fill.parentElement;
+  progress.setAttribute("aria-valuenow", String(rpg.xp_in_level));
+  $("#character-next-rank").textContent = rpg.next_rank
+    ? `${rpg.total_xp} total XP · ${rpg.rank_progress_percent}% toward rank ${rpg.next_rank}`
+    : "Top listed rank reached. Your progress remains recorded.";
+  const milestones = rpg.achievements.map((achievement) => {
+    const labels = { first_completed_task: "First action", ten_completed_tasks: "10 actions completed" };
+    const item = document.createElement("li");
+    item.textContent = labels[achievement] || achievement.replaceAll("_", " ");
+    return item;
+  });
+  $("#character-achievements").replaceChildren(...milestones);
+  const rankRows = rpg.ruleset.rank_thresholds.map((rule) => {
+    const item = document.createElement("li");
+    item.textContent = `${rule.rank} rank · ${rule.minimum_xp} XP`;
+    return item;
+  });
+  $("#rank-rules").replaceChildren(...rankRows);
+  const characterForm = $("#character-form");
+  characterForm.elements.hunter_name.value = character.hunter_name || "Hunter";
+  characterForm.elements.callsign.value = character.callsign || "";
+  characterForm.elements.paused.checked = Boolean(character.paused);
   $("#rpg-status").textContent = readPreference("standard-language") === "true"
     ? `Progress level ${rpg.level} · ${rpg.completed_tasks} actions completed`
-    : `Level ${rpg.level} · ${rpg.total_xp} XP · ${rpg.completed_tasks} completed tasks`;
+    : `Rank ${rpg.rank} · Level ${rpg.level} · ${rpg.total_xp} XP · ${rpg.completed_tasks} completed actions`;
+}
+
+function renderSkills(skills) {
+  const rows = skills.map((skill) => {
+    const item = document.createElement("li");
+    const details = document.createElement("details");
+    const summary = document.createElement("summary");
+    summary.textContent = `${skill.name} · Level ${skill.level}`;
+    const definition = document.createElement("p");
+    definition.textContent = skill.definition;
+    const confidence = document.createElement("small");
+    confidence.textContent = `${skill.domain ? skill.domain.replaceAll("_", " ") + " · " : ""}${skill.confidence}% confidence · ${skill.evidence.length} evidence item${skill.evidence.length === 1 ? "" : "s"}`;
+    const evidenceList = document.createElement("ul");
+    evidenceList.className = "record-list";
+    for (const record of skill.evidence) {
+      const evidenceItem = document.createElement("li");
+      const text = document.createElement("span");
+      text.textContent = record.summary;
+      const note = document.createElement("small");
+      note.textContent = `Self-reported · ${record.confidence}% confidence · not independently verified`;
+      evidenceItem.append(text, note);
+      evidenceList.append(evidenceItem);
+    }
+    const form = document.createElement("form");
+    form.className = "skill-evidence-form";
+    form.innerHTML = '<label>Evidence note<textarea name="summary" maxlength="500" rows="2" required></textarea></label><label>Confidence (0–100)<input name="confidence" type="number" min="0" max="100" value="50" required></label><button type="submit" class="quiet">Add evidence</button>';
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const currentForm = event.currentTarget;
+      const payload = formObject(currentForm);
+      payload.confidence = Number(payload.confidence);
+      try {
+        await api(`/api/v1/rpg/skills/${skill.id}/evidence`, { method: "POST", body: JSON.stringify(payload) });
+        await loadWorkspace();
+        showNotice("Evidence added as self-reported.");
+      } catch (error) { showNotice(error.message); }
+    });
+    details.append(summary, definition, confidence, evidenceList, form);
+    item.append(details);
+    return item;
+  });
+  if (!rows.length) {
+    const empty = document.createElement("li");
+    empty.textContent = "Add a skill you want to build. You choose its level and confidence.";
+    rows.push(empty);
+  }
+  $("#skills").replaceChildren(...rows);
+}
+
+function renderChronicle(events) {
+  const rows = events.slice(0, 12).map((entry) => {
+    const item = document.createElement("li");
+    const title = document.createElement("strong");
+    title.textContent = entry.title;
+    const note = document.createElement("small");
+    const when = new Date(entry.created_at);
+    const date = Number.isNaN(when.getTime()) ? "" : new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(when);
+    note.textContent = [entry.detail, date].filter(Boolean).join(" · ");
+    item.append(title, note);
+    return item;
+  });
+  $("#chronicle").replaceChildren(...rows);
+  $("#chronicle-empty").hidden = rows.length > 0;
 }
 
 function localDateString(date = new Date()) {
@@ -73,13 +170,15 @@ async function loadWorkspace() {
   $("#logout").hidden = false;
   if (!$("#daily-plan-date").value) $("#daily-plan-date").value = localDateString();
   const planDate = $("#daily-plan-date").value;
-  const [domains, goals, preview, rpg, insights, inbox, awakening, campaigns, reviews, tasks, currentPlan, recovery] = await Promise.all([
+  const [domains, goals, preview, rpg, insights, inbox, awakening, campaigns, reviews, tasks, currentPlan, recovery, skills, chronicle, agentActions] = await Promise.all([
     api("/api/v1/domains"), api("/api/v1/goals"), api("/api/v1/plans/preview"), api("/api/v1/rpg/status"), api("/api/v1/insights/progress"), api("/api/v1/notifications/inbox"),
     api("/api/v1/onboarding/awakening"), api("/api/v1/campaigns"), api("/api/v1/reviews"), api("/api/v1/tasks"),
     api(`/api/v1/daily-plans/${planDate}`), api(`/api/v1/daily-plans/${planDate}/recovery`),
+    api("/api/v1/rpg/skills"), api("/api/v1/rpg/chronicle"), api("/api/v1/agent/actions"),
   ]);
   const domainSelect = $("#goal-form select");
   domainSelect.replaceChildren(...domains.map((domain) => new Option(domain.name, domain.code)));
+  $("#skill-domain").replaceChildren(new Option("Choose a domain", ""), ...domains.map((domain) => new Option(domain.name, domain.code)));
   const activeGoals = goals.filter((goal) => goal.status === "active");
   $("#agent-goal").replaceChildren(...activeGoals.map((goal) => new Option(goal.title, goal.id)));
   $("#task-goal").replaceChildren(new Option("No goal selected", ""), ...activeGoals.map((goal) => new Option(goal.title, goal.id)));
@@ -102,6 +201,9 @@ async function loadWorkspace() {
   renderAwakening(awakening);
   renderCampaigns(campaigns);
   renderReviews(reviews);
+  renderSkills(skills);
+  renderChronicle(chronicle);
+  renderAgentActions(agentActions);
   showNotice("Your private workspace is ready.");
 }
 
@@ -383,6 +485,54 @@ function renderPlan(plan) {
   list.replaceChildren(...rows);
 }
 
+function renderAgentActions(actions) {
+  const rows = actions.slice(0, 8).map((action) => {
+    const item = document.createElement("li");
+    const title = document.createElement("strong");
+    title.textContent = action.proposal.title;
+    const state = document.createElement("small");
+    const labels = { proposed: "Awaiting your approval", approved: "Added after your approval", rejected: "Rejected", undone: "Undone" };
+    state.textContent = `${labels[action.status] || action.status} · Local task · No external access`;
+    item.append(title, state);
+    const controls = document.createElement("div");
+    controls.className = "item-actions agent-history-actions";
+    if (action.status === "proposed") {
+      controls.append(
+        makePlanItemButton("Approve", () => runAgentAction(action.id, "approve"), "quiet", `proposal ${action.proposal.title}`),
+        makePlanItemButton("Reject", () => runAgentAction(action.id, "reject"), "text-button", `proposal ${action.proposal.title}`),
+      );
+    } else if (action.status === "approved") {
+      controls.append(makePlanItemButton("Undo", () => runAgentAction(action.id, "undo"), "quiet", `added action ${action.proposal.title}`));
+    }
+    if (controls.childElementCount) item.append(controls);
+    return item;
+  });
+  if (!rows.length) {
+    const empty = document.createElement("li");
+    empty.textContent = "No action proposals yet.";
+    rows.push(empty);
+  }
+  $("#agent-action-history").replaceChildren(...rows);
+}
+
+async function runAgentAction(actionId, decision) {
+  try {
+    const result = await api(`/api/v1/agent/actions/${actionId}/${decision}`, { method: "POST" });
+    await loadWorkspace();
+    if (decision === "approve") showNotice(`Approved. “${result.task.title}” was added to your actions.`);
+    else if (decision === "undo") showNotice("The approved action was undone and kept in your history.");
+    else showNotice("Proposal rejected. No task was created.");
+  } catch (error) { showNotice(error.message); }
+}
+
+function showAgentReview(action) {
+  activeAgentActionId = action.id;
+  $("#agent-review").hidden = false;
+  $("#agent-review-text").textContent = `Review: add “${action.proposal.title}” to “${action.proposal.goal_title}”? It will create one local task and will not contact an external service.`;
+  $("#approve-agent-action").disabled = false;
+  $("#reject-agent-action").disabled = false;
+}
+
 $("#login-form").addEventListener("submit", async (event) => {
   event.preventDefault(); showNotice("Signing in…");
   try { await api("/api/v1/auth/login", { method: "POST", body: JSON.stringify(formObject(event.currentTarget)) }); await loadWorkspace(); }
@@ -422,6 +572,38 @@ $("#task-form").addEventListener("submit", async (event) => {
     form.reset();
     await loadWorkspace();
     showNotice("Action added. Choose it when you’re ready to plan.");
+  } catch (error) { showNotice(error.message); }
+});
+
+$("#character-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const payload = {
+    hunter_name: form.elements.hunter_name.value.trim(),
+    callsign: form.elements.callsign.value.trim() || null,
+    paused: form.elements.paused.checked,
+  };
+  try {
+    await api("/api/v1/rpg/character", { method: "PATCH", body: JSON.stringify(payload) });
+    await loadWorkspace();
+    showNotice("Character settings saved.");
+  } catch (error) { showNotice(error.message); }
+});
+
+$("#skill-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const payload = formObject(form);
+  if (!payload.domain) payload.domain = null;
+  payload.level = Number(payload.level);
+  payload.confidence = Number(payload.confidence);
+  try {
+    await api("/api/v1/rpg/skills", { method: "POST", body: JSON.stringify(payload) });
+    form.reset();
+    form.elements.level.value = "1";
+    form.elements.confidence.value = "0";
+    await loadWorkspace();
+    showNotice("Skill added to your character build.");
   } catch (error) { showNotice(error.message); }
 });
 
@@ -494,15 +676,97 @@ $("#refresh-inbox").addEventListener("click", async () => {
 });
 $("#core-form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  try { const result = await api("/api/v1/core/respond", { method: "POST", body: JSON.stringify(formObject(event.currentTarget)) }); $("#core-answer").textContent = `${result.answer} Sources: ${result.provenance.join(", ") || "no saved records"}.`; }
+  try {
+    const result = await api("/api/v1/core/respond", { method: "POST", body: JSON.stringify(formObject(event.currentTarget)) });
+    coreReply = result.answer;
+    $("#core-answer").textContent = `${result.answer} Sources: ${result.provenance.join(", ") || "no saved records"}.`;
+    $("#speak-answer").disabled = !("speechSynthesis" in window);
+  }
   catch (error) { showNotice(error.message); }
+});
+
+$("#voice-input").addEventListener("click", async () => {
+  const status = $("#voice-status");
+  if (!window.isSecureContext) {
+    status.textContent = "On-device dictation needs a secure connection. Use the microphone on your iPhone keyboard for now.";
+    return;
+  }
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!Recognition || !("processLocally" in Recognition.prototype) || typeof Recognition.available !== "function") {
+    status.textContent = "This browser does not offer confirmed on-device dictation. Use the microphone on your iPhone keyboard; no audio was recorded here.";
+    return;
+  }
+  const language = navigator.language || "en-US";
+  status.textContent = `Checking for on-device dictation in ${language}…`;
+  const button = $("#voice-input");
+  button.disabled = true;
+  try {
+    const availability = await Recognition.available({ langs: [language], processLocally: true });
+    if (availability !== "available") {
+      status.textContent = "On-device dictation is not ready for this language. Use the microphone on your iPhone keyboard. No cloud recognition was started.";
+      return;
+    }
+    const recognition = new Recognition();
+    recognition.processLocally = true;
+    recognition.lang = language;
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.onresult = (resultEvent) => {
+      const transcript = resultEvent.results?.[0]?.[0]?.transcript || "";
+      const input = $("#core-question");
+      const start = input.selectionStart ?? input.value.length;
+      const end = input.selectionEnd ?? input.value.length;
+      input.setRangeText(transcript, start, end, "end");
+      input.focus();
+      status.textContent = "Dictation added. Review and edit the text; it is not saved until you submit.";
+    };
+    recognition.onerror = (errorEvent) => {
+      status.textContent = errorEvent.error === "not-allowed"
+        ? "Microphone permission was declined. You can still type or use keyboard dictation."
+        : "On-device dictation could not start. You can still type or use keyboard dictation.";
+    };
+    recognition.onend = () => { button.disabled = false; };
+    status.textContent = "Listening on this device. Your transcript will appear here for review.";
+    recognition.start();
+  } catch {
+    status.textContent = "On-device dictation is unavailable right now. Use the microphone on your iPhone keyboard.";
+  } finally {
+    if (button.disabled) button.disabled = false;
+  }
+});
+
+$("#speak-answer").addEventListener("click", () => {
+  if (!("speechSynthesis" in window) || !coreReply) return;
+  if (window.speechSynthesis.speaking) {
+    window.speechSynthesis.cancel();
+    $("#speak-answer").textContent = "Read aloud";
+    return;
+  }
+  const utterance = new SpeechSynthesisUtterance(coreReply);
+  utterance.lang = navigator.language || "en-US";
+  utterance.onend = () => { $("#speak-answer").textContent = "Read aloud"; };
+  utterance.onerror = () => { $("#speak-answer").textContent = "Read aloud"; };
+  $("#speak-answer").textContent = "Stop speaking";
+  window.speechSynthesis.cancel();
+  window.speechSynthesis.speak(utterance);
 });
 $("#agent-form").addEventListener("submit", async (event) => {
   event.preventDefault();
+  const form = event.currentTarget;
+  const payload = formObject(form);
   try {
-    const result = await api("/api/v1/agent/proposals/next-task", { method: "POST", body: JSON.stringify(formObject(event.currentTarget)) });
-    $("#agent-proposal").textContent = `${result.proposal.title} — approval required; no task was created.`;
+    const action = await api("/api/v1/agent/actions", { method: "POST", body: JSON.stringify(payload) });
+    form.elements.task_title.value = "";
+    $("#agent-proposal").textContent = "The proposed action is saved for review. No task has been created.";
+    showAgentReview(action);
+    await loadWorkspace();
   } catch (error) { showNotice(error.message); }
+});
+$("#approve-agent-action").addEventListener("click", () => {
+  if (activeAgentActionId) runAgentAction(activeAgentActionId, "approve");
+});
+$("#reject-agent-action").addEventListener("click", () => {
+  if (activeAgentActionId) runAgentAction(activeAgentActionId, "reject");
 });
 $("#logout").addEventListener("click", async () => {
   try { await api("/api/v1/auth/logout", { method: "POST" }); }

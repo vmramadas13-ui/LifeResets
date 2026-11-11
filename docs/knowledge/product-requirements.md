@@ -2,7 +2,7 @@
 
 ## Source and use
 
-Source: *LifeResets Product Requirements Document*, version 1.0, dated 11 November 2026. The complete source remains in the owner's local Downloads folder. This repository is public, so this knowledge-base copy omits private personal measurements and identifying details from the source. Use the local source document for the final, detailed requirements audit.
+Source: *LifeResets Product Requirements Document*, version 1.0, dated 11 November 2026, with *LifeResets — Product Discovery Q&A* as supplemental evidence of user choices. Both original documents remain in the owner's local Downloads folder. This repository is public, so the knowledge base omits private measurements, account details, and identifying information. See [the product discovery coverage audit](product-discovery-audit.md) for the Q&A crosswalk, conflict resolutions, and remaining gaps.
 
 The source is a proposed specification, not evidence that a feature exists. It labels requirements as confirmed, inferred, or open; preserve those labels during implementation. “Must” identifies minimum safe/useful scope, not a shipped status. Finish the requested build sequence, then fill the traceability status and evidence below against the original source.
 
@@ -13,8 +13,8 @@ The source is a proposed specification, not evidence that a feature exists. It l
 - Require explicit approval before external writes, destructive actions, financial actions, or agent execution.
 - Do not diagnose, prescribe, promise outcomes, punish rest, shame lapses, or silently change history.
 - Keep game language optional, accessibility usable, and progression rules visible.
-- Keep provider, calendar, hosting, canonical domain, and measurement decisions open until explicitly resolved.
-- Design the primary experience for a lightweight Mac-first setup; large local models are not required.
+- The discovery sets local-first self-hosting and a target provider portfolio; keep deployment details, credentials, provider scopes, canonical domain, and Life Score rules open until configured and reviewed.
+- The blueprint began Mac-first; the user clarified on 11 November 2026 that iPhone is the primary use device, with Mac support. Large local models are not required.
 
 ## Product scope from the source
 
@@ -30,7 +30,7 @@ Status values for final audit: **implemented**, **partial**, **deferred**, **blo
 
 | Story | Requirement area | Final status | Evidence / gap |
 | --- | --- | --- | --- |
-| LR-001 | Profile and preferred address | Partial | Profile API stores display name, timezone, and preferences; callsign/personal address flow is not in the UI. `tests/test_identity.py`. |
+| LR-001 | Profile and preferred address | Partial | Profile API stores display name, timezone, and preferences; the character UI can edit Hunter name and callsign, but general profile/timezone settings remain API-only. `tests/test_identity.py`, `tests/test_rpg.py`. |
 | LR-002 | Resumable onboarding | Partial | Seven-step resumable checklist, skip/complete/in-progress states, no answers collected. No guided prompts or baseline capture. `tests/test_lifecycle.py`. |
 | LR-003 | Editable life domains | Partial | Eight-code catalog is fixed; no rename, reorder, hide, or subareas. `src/liferesets/domain_data.py`. |
 | LR-004 | Goal baselines, targets, and edits | Partial | Owned goals and unit-labelled metrics support target/current/baseline and dates; confidence and revision history are absent. `tests/test_domain_data.py`. |
@@ -42,17 +42,17 @@ Status values for final audit: **implemented**, **partial**, **deferred**, **blo
 | LR-010 | Weekly review | Partial | Weekly review drafts and consent-gated response storage; no guided review prompts or carry-forward planning. `tests/test_lifecycle.py`. |
 | LR-011 | Monthly review | Partial | Monthly review drafts and consent-gated response storage; no guided review prompts or carry-forward planning. `tests/test_lifecycle.py`. |
 | LR-012 | Reflection and recovery | Partial | Review responses require current `reflection_storage` consent. Missed-plan recovery offers earlier unfinished actions as optional suggestions without shame, automatic carry-forward, or a penalty; guided reflection prompts are absent. `tests/test_daily_planning.py`, `tests/test_lifecycle.py`. |
-| LR-013 | XP event ledger | Partial | XP is derived from completed tasks using a visible rule; no append-only event ledger, correction events, or rule versioning. `tests/test_rpg.py`. |
-| LR-014 | Ranks and attributes | Partial | Level only; ranks and attributes are not modeled. `src/liferesets/rpg.py`. |
-| LR-015 | Skills, class, titles, achievements | Partial | Two derived task-count achievements; no skill tree, class, titles, or skill evidence. `tests/test_rpg.py`. |
-| LR-016 | Prestige and Chronicle | Not started | No prestige or Chronicle. |
+| LR-013 | XP event ledger | Partial | Versioned task-completion and correction entries are append-only through the API; re-opening a completed task reverses its XP and repeated requests do not duplicate awards. The database does not enforce immutability and verified-effort rules are absent. `tests/test_rpg.py`. |
+| LR-014 | Ranks and attributes | Partial | E-to-SSS ranks, level progress, and draft thresholds are visible. Thresholds are starter values, and evidence-backed attributes are not modeled. `src/liferesets/rpg.py`, `tests/test_rpg.py`. |
+| LR-015 | Skills, class, titles, achievements | Partial | User-defined skills support definitions, levels, confidence, and clearly self-reported evidence; first/ten-action achievements are derived. Hidden class evolution and earned titles are not implemented. `tests/test_rpg.py`. |
+| LR-016 | Prestige and Chronicle | Partial | Chronicle shows account-scoped milestones and XP corrections. Prestige is intentionally absent until the reset/preservation rules are decided; existing history is not erased. `src/liferesets/rpg.py`. |
 | LR-017 | Explainable Life Score | Deferred | No composite score implemented; formula and missing-data policy remain open by design. |
-| LR-018 | Anti-gaming and fair recovery | Partial | No inactivity penalty in current derivation; caps, duplicate prevention, pause controls, and explicit recovery policy are absent. |
+| LR-018 | Anti-gaming and fair recovery | Partial | No inactivity penalty; duplicate completion requests do not reward twice, reopening reverses points, and progression can be paused. Repetitive-action caps and independent evidence verification are absent. `tests/test_rpg.py`. |
 | LR-019 | THE CORE coaching | Partial | Authenticated local deterministic summary with bounded context and provenance; no generated coaching or learning conversation. `tests/test_core.py`. |
-| LR-020 | Provider routing and fallback | Partial | Adapter protocol and deterministic fallback exist; no configured provider/router. Provider decision is open. |
+| LR-020 | Provider routing and fallback | Partial | Adapter protocol and deterministic fallback exist. Discovery selected NVIDIA NIM, local Ollama, Gemini, and possible future OpenAI/Claude adapters; none is configured or routed yet. Credentials, per-provider consent/retention, cost limits, and failure behavior remain. `docs/decisions/0002-core-provider-boundary.md`. |
 | LR-021 | CORE memory controls | Not started | No stored AI memory, review, edit, expiry, or deletion. |
 | LR-022 | Knowledge capture and search | Not started | No notes, links, tags, or search. |
-| LR-023 | AI task guardrails | Partial | Authenticated goal-scoped proposal preview cannot execute, write, use tools, or access external services. No sandboxed execution. `tests/test_agent.py`. |
+| LR-023 | AI task guardrails | Partial | One account-scoped local task action can be proposed, explicitly approved, rejected, and conditionally undone; it cannot access external services or run code. No model-generated reasoning or sandboxed execution. `tests/test_agent.py`. |
 | LR-024 | Career roadmap | Partial | Generic career goals/tasks can be recorded; no roadmap or role competency model. |
 | LR-025 | Learning paths | Partial | Generic learning goals/tasks can be recorded; no curriculum, skill evidence, or spaced review. |
 | LR-026 | Fitness measurements | Partial | Generic metrics can represent dated measurements; no dedicated fitness log/trend or sensitive-data opt-in. |
@@ -65,8 +65,8 @@ Status values for final audit: **implemented**, **partial**, **deferred**, **blo
 | LR-033 | Backup and restore | Partial | Passphrase-encrypted SQLite create/verify/restore CLI, authenticated decryption, integrity/FK checks, no-overwrite restore, file permissions, and linked-record tests. PostgreSQL, schedules, rotation, and isolated operational restore drills remain. `tests/test_backup.py`, `docs/operations.md`. |
 | LR-034 | Authentication and security | Partial | Argon2id, revocable server-side sessions, CSRF, and account isolation are tested; MFA, password recovery, and deployed rate limiting are absent. |
 | LR-035 | Notification preferences and quiet hours | Partial | In-app due-task inbox only; no categories, quiet hours, push, or email. `tests/test_notifications.py`. |
-| LR-036 | Responsive and offline access | Partial | Responsive installable shell; service worker caches static assets only. No offline edits, sync queue, or conflict resolution. `tests/test_web.py`. |
-| LR-037 | Accessibility and game-layer toggle | Partial | Semantic forms, labels, visible keyboard focus, and text status are present; no persistent theme/terminology/reduced-motion controls or manual accessibility audit. |
+| LR-036 | Responsive and offline access | Partial | iPhone-first responsive PWA shell with safe-area spacing and mobile navigation; service worker caches static assets only. No offline edits, sync queue, conflict resolution, or production HTTPS setup for iPhone access yet. `tests/test_web.py`. |
+| LR-037 | Accessibility and game-layer toggle | Partial | Display preferences persist in the browser; controls include visible focus, text status, reduced motion, terminology mode, 44px targets, and opt-in on-device dictation with keyboard fallback. Physical iPhone/screen-reader and 200% text checks remain. `tests/test_web.py`, `docs/design/visual-requirements.md`. |
 | LR-038 | System observability | Partial | Liveness/readiness, structured logging setup, and minimal audit events; no metrics dashboard, alerting, provider/backup health. |
 | LR-039 | Testing, migration, and rollback | Partial | CI, migration upgrade/downgrade, and automated tests pass; no staging deployment/rollback rehearsal or restore-integrity test. |
 | LR-040 | User-controlled sharing | Not started | No sharing feature or public links. |
@@ -88,12 +88,14 @@ Build sequence from the source:
 9. Responsive/accessibility/PWA/notifications.
 10. Calendar integrations and guarded agent only after their security gates.
 
-## Decisions to preserve as open until resolved
+## Decisions from discovery and remaining open points
 
-Provider meaning/configuration; canonical domain labels; single-user versus SaaS deployment; hosting; initial AI provider; Life Score formula; rank/XP mechanics; calendar provider/scopes; locale/timezone defaults; source/date of personal baselines; notification channels/quiet hours. Resolve any dependent choice before connecting an external service or publishing personal data.
+Discovery decisions now recorded: iPhone is the primary client, with Mac support; the intended deployment is local-first/self-hosted, with private iPhone access through Tailscale; the intended provider portfolio is NVIDIA NIM, local Ollama, and Gemini, with possible future OpenAI/Claude adapters; THE CORE should use the user-selected, editable in-app address; and progression should eventually include Hunter ranks, skills, attributes, and a long campaign. These are product directions, not evidence that Tailscale, providers, or the larger progression system are configured. The running CORE remains deterministic and local until provider credentials, consent, retention, and failure handling are explicitly implemented.
+
+Keep these items open: the Hunter's prominent name (Q41); exact rank review and demotion rules; Life Score formula and missing-data behavior; visual treatment across the Inkpop concept and cinematic System preference; which notifications are enabled and their quiet hours; calendar scopes and external write approvals; vault recovery and encryption architecture; and provider credentials, retention, and cost limits. Record any decision before implementing dependent behavior.
 
 ## Post-build verification snapshot
 
-Audit performed against the original local PRD after the daily planning increment and the onboarding/campaign/review and encrypted backup extensions on 11 November 2026. Of 40 stories, 33 are partial, 6 are not started, and 1 is deferred; none meets every acceptance criterion in full. Latest local verification: 55 tests passed; Ruff lint/format, JavaScript syntax, and browser smoke checks passed. The daily planning branch still requires its GitHub Actions run and merge before this snapshot is final.
+Audit updated against the original local PRD and Product Discovery Q&A on 11 November 2026. Of 40 stories, 34 are partial, 5 are not started, and 1 is deferred; none meets every acceptance criterion in full. Latest local verification on the current feature branch: 64 tests passed, Ruff lint and format checks passed, JavaScript syntax and `git diff --check` passed. The character-progression branch remains uncommitted, so its GitHub Actions result is pending. The disposable local preview showed the iPhone-width sign-in screen; a physical iPhone and screen-reader review has not been performed.
 
 Known release blockers: PostgreSQL backup/restore, automated backup scheduling/rotation and restore monitoring, hosted hardening, production deployment, provider/calendar write integration, offline synchronization, user-approved Life Score, and a completed accessibility/recovery review. These limits are also recorded in `docs/operations.md` and `docs/decisions/0002-core-provider-boundary.md`.

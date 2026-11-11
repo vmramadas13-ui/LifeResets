@@ -1,12 +1,12 @@
 # LifeResets
 
-LifeResets is a private, adaptive personal operating system for turning goals into measurable actions. Development follows the staged build sequence and acceptance gates in the master blueprint.
+LifeResets is a private, adaptive personal operating system for turning goals into measurable actions. The user has clarified that iPhone is the primary device, with full Mac support. Development follows the staged build sequence and acceptance gates in the master blueprint.
 
 The sanitized PRD requirements catalog and post-build story traceability checklist are maintained in [docs/knowledge/product-requirements.md](docs/knowledge/product-requirements.md). The full PRD stays in the owner's local Downloads folder because it contains sensitive personal measurements.
 
 ## Current stage
 
-The repository contains a FastAPI backend and responsive PWA with local account authentication, consent-aware lifecycle records, eight-domain goals and metrics, tasks/habits/evidence, persistent capacity-aware daily plans with user-controlled recovery suggestions, deterministic plan previews, activity-based RPG progression, read-only THE CORE fallback, progress calculations, local calendar export/reminders, and a proposal-only bounded agent. The UI follows the Inkpop visual direction and includes browser-persisted light/dark, reduced-motion, and standard-language controls. See [visual requirements](docs/design/visual-requirements.md) and the PRD traceability checklist for scope and gaps.
+The repository contains a FastAPI backend and responsive PWA with local account authentication, consent-aware lifecycle records, eight-domain goals and metrics, tasks/habits/evidence, persistent capacity-aware daily plans with user-controlled recovery suggestions, deterministic plan previews, a versioned and correctable XP ledger, rank thresholds, user-defined skills with self-reported evidence, a Chronicle, read-only THE CORE fallback, progress calculations, local calendar export/reminders, and a single-action agent flow that requires explicit approval and can be undone when unused. The UI follows the Inkpop visual direction and includes iPhone bottom navigation plus browser-persisted light/dark, reduced-motion, and standard-language controls. Voice input only uses browser-confirmed on-device recognition; if unavailable, use iPhone keyboard dictation. Spoken replies require a tap. See [visual requirements](docs/design/visual-requirements.md) and the PRD traceability checklist for scope and gaps.
 
 ## Requirements
 
@@ -76,9 +76,9 @@ GET /api/v1/plans/preview accepts a start date and a 1–31 day horizon. It retu
 
 GET/PUT `/api/v1/daily-plans/{date}` reads or saves a per-day selection of owned tasks, available minutes, and energy. A plan cannot exceed its stated capacity. PATCH `/api/v1/daily-plans/{date}/items/{id}` records completion, deferral, or removal. GET `/api/v1/daily-plans/{date}/recovery` previews eligible unfinished actions from earlier plans. It never carries tasks forward automatically, changes a task without a user choice, or applies a missed-day penalty. Daily plan data is included in account export and removed with the account.
 
-## RPG progression (initial rules)
+## Character build and progression
 
-GET /api/v1/rpg/status derives account-owned progression from completed tasks: 10 XP per completed task and 100 XP per level, with first-task and ten-task achievements. The response exposes the formula and frames the level as activity progress, not personal worth. Progression is derived from task state and is not yet a separate event ledger.
+GET `/api/v1/rpg/status` returns the signed-in Hunter's rank, level, XP, achievements, starter rank thresholds, and ruleset version. A task awards 10 XP once while completed; reopening it appends an equal negative correction. Repeated same-status requests do not duplicate points. PATCH `/api/v1/rpg/character` changes the display name/callsign or pauses new awards. GET `/api/v1/rpg/events` reads the append-only ledger; POST `/api/v1/rpg/events/{id}/correct` appends a correction without deleting the original. Rank/XP values are editable starter rules and explicitly marked draft. `GET/POST/PATCH /api/v1/rpg/skills` creates user-defined skills; POST `/api/v1/rpg/skills/{id}/evidence` adds self-reported evidence that is never marked verified by the app. GET `/api/v1/rpg/chronicle` shows a recent, account-scoped history. No numerical Life Score or irreversible prestige reset is implemented.
 
 ## Domain progress intelligence
 
@@ -88,9 +88,13 @@ GET /api/v1/insights/progress compares a metric's current value with its baselin
 
 GET /api/v1/notifications/inbox lists pending tasks due from today through the next 31 days. GET /api/v1/calendar.ics downloads the signed-in account's dated tasks as iCalendar events. Both are read-only and account-scoped. The app does not send push/email notifications or sync with an external calendar.
 
-## Bounded agent preview
+## Bounded agent actions
 
-POST /api/v1/agent/proposals/next-task returns a single task proposal scoped to an active, owned goal. It cannot create records, access external services, or invoke tools. Execution is disabled pending a separate security review and approval design.
+POST `/api/v1/agent/proposals/next-task` remains a read-only preview. The UI action flow uses POST `/api/v1/agent/actions` to record one local task proposal against an owned active goal. POST `/api/v1/agent/actions/{id}/approve` creates that task only after a separate CSRF-protected approval; reject prevents creation. POST `/api/v1/agent/actions/{id}/undo` marks the created task skipped when it is still pending and has never been put in a daily plan. Approval is idempotent, the audit contains no prompt or task text, and action records are included in account export. This is a fixed local task tool, not free-form model execution; no code, shell, files, network, calendar, or financial actions are available.
+
+## Voice controls
+
+On the THE CORE screen, on-device dictation starts only after a tap and only if the browser confirms local recognition support for the selected language. The app never falls back to server-based speech recognition; on iPhone, use the keyboard microphone if local recognition is unavailable. The transcript is inserted as editable text and is not submitted until the user sends it. Read aloud is also user-triggered and uses the browser's speech synthesis. No recording is saved by LifeResets.
 
 ## Onboarding, campaigns, and reviews
 
@@ -102,7 +106,7 @@ The local runbook is [docs/operations.md](docs/operations.md); the project chang
 
 ## Web/PWA interface
 
-Open the API root (`/`) for a responsive, installable app shell. The interface supports local sign-in/out, goal and action creation, capacity- and energy-aware daily planning, explicit task decisions, recovery suggestions, and browser-persisted display preferences. The service worker caches only static shell files and never caches `/api/` responses. Offline data entry and push notifications are not enabled.
+Open the API root (`/`) for the iPhone-first, installable app shell. The interface supports local sign-in/out, goal and action creation, capacity- and energy-aware daily planning, explicit recovery decisions, character and skill tracking, milestone history, voice controls, and browser-persisted display preferences. The service worker caches only static assets and never caches `/api/` responses. Offline data entry and push notifications are not enabled. Voice input requires a secure context and confirmed on-device recognition; the app does not fall back to cloud speech recognition.
 
 For state-changing requests, read the lr-csrf cookie and send its value in the X-CSRF-Token header. The session cookie is HttpOnly.
 

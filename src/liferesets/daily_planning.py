@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from liferesets.database import get_db
 from liferesets.models import AuditEvent, DailyPlan, DailyPlanItem, Task, User
+from liferesets.progression import record_task_transition
 from liferesets.security import Authenticated, AuthenticatedWithCsrf
 
 router = APIRouter(prefix="/api/v1/daily-plans", tags=["daily planning"])
@@ -282,6 +283,7 @@ def update_daily_plan_item(
             raise HTTPException(
                 status_code=409, detail="Skipped tasks cannot be completed."
             )
+        record_task_transition(db, item.task, item.task.status, "completed")
         item.task.status = "completed"
         item.task.completed_at = item.task.completed_at or datetime.now(UTC)
         item.status = "completed"
