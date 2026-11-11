@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from liferesets.database import get_db
-from liferesets.models import Goal
+from liferesets.models import Goal, GoalMetric
 from liferesets.security import Authenticated
 
 router = APIRouter(prefix="/api/v1/insights", tags=["domain intelligence"])
@@ -28,6 +28,8 @@ def _metric_progress(metric) -> dict[str, object]:
         "baseline_value": str(baseline) if baseline is not None else None,
         "current_value": str(current) if current is not None else None,
         "target_value": str(target),
+        "confidence": metric.confidence,
+        "history_count": len(metric.measurements),
         "progress_percent": str(percentage.quantize(Decimal("0.01")))
         if percentage is not None
         else None,
@@ -47,7 +49,7 @@ def progress_insights(
     goals = db.scalars(
         select(Goal)
         .where(Goal.user_id == auth.user.id)
-        .options(selectinload(Goal.metrics))
+        .options(selectinload(Goal.metrics).selectinload(GoalMetric.measurements))
         .order_by(Goal.created_at, Goal.id)
     ).all()
     return {

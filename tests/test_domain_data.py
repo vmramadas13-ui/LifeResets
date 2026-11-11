@@ -3,7 +3,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from liferesets.models import Evidence, Goal, Habit, Task, User
+from liferesets.models import Evidence, Goal, GoalMetric, Habit, Task, User
 
 
 def _login(client, test_user: dict[str, object]) -> None:
@@ -15,12 +15,66 @@ def _login(client, test_user: dict[str, object]) -> None:
     client.headers.update({"X-CSRF-Token": client.cookies.get("lr-csrf")})
 
 
-def test_domains_are_private_fixed_catalog(client, test_user) -> None:
+def test_domains_are_private_and_user_configurable(client, test_user) -> None:
     assert client.get("/api/v1/domains").status_code == 401
     _login(client, test_user)
     domains = client.get("/api/v1/domains").json()
     assert len(domains) == 8
     assert "empire" not in {domain["code"] for domain in domains}
+    assert all(domain["enabled"] for domain in domains)
+    existing_goal = client.post(
+        "/api/v1/goals", json={"domain": "career", "title": "Existing goal"}
+    )
+    assert existing_goal.status_code == 201
+
+    settings = []
+    career_order = next(
+        domain["sort_order"] for domain in domains if domain["code"] == "career"
+    )
+    finance_order = next(
+        domain["sort_order"] for domain in domains if domain["code"] == "finance"
+    )
+    for domain in domains:
+        item = {key: domain[key] for key in ("code", "name", "sort_order", "enabled")}
+        if item["code"] == "career":
+            item.update(name="Work", sort_order=1, enabled=False)
+            item["sort_order"] = finance_order
+        elif item["code"] == "finance":
+            item["sort_order"] = career_order
+        settings.append(item)
+    saved = client.put("/api/v1/domains/settings", json={"domains": settings})
+    assert saved.status_code == 200, saved.text
+    configured = saved.json()
+    assert configured[0]["code"] == "finance"
+    assert next(item for item in configured if item["code"] == "career") == {
+        **next(item for item in domains if item["code"] == "career"),
+        "name": "Work",
+        "sort_order": finance_order,
+        "enabled": False,
+    }
+    hidden_goal = client.post(
+        "/api/v1/goals", json={"domain": "career", "title": "New goal"}
+    )
+    assert hidden_goal.status_code == 422
+    assert any(
+        item["id"] == existing_goal.json()["id"]
+        for item in client.get("/api/v1/goals").json()
+    )
+    all_hidden = [
+        {
+            "code": item["code"],
+            "name": item["name"],
+            "sort_order": item["sort_order"],
+            "enabled": False,
+        }
+        for item in configured
+    ]
+    assert (
+        client.put("/api/v1/domains/settings", json={"domains": all_hidden}).status_code
+        == 422
+    )
+    exported = client.get("/api/v1/export").json()["profile"]["preferences"]
+    assert exported["life_domains"]["career"]["name"] == "Work"
 
 
 def test_goal_task_habit_and_evidence_flow(client, test_user) -> None:
@@ -28,24 +82,70 @@ def test_goal_task_habit_and_evidence_flow(client, test_user) -> None:
     goal_response = client.post(
         "/api/v1/goals",
         json={
-            "domain": "finance",
-            "title": "Build an emergency fund",
+            "domain": "learning",
+            "title": "Build a steady study practice",
             "target_date": "2027-06-30",
             "metrics": [
                 {
-                    "name": "Emergency savings",
-                    "unit": "INR",
-                    "baseline_value": "-1000",
-                    "target_value": "100000",
-                    "current_value": "0",
+                    "name": "Practice sessions",
+                    "unit": "sessions",
+                    "baseline_value": "0",
+                    "target_value": "10",
+                    "current_value": "1",
+                    "confidence": 70,
                 }
             ],
         },
     )
     assert goal_response.status_code == 201, goal_response.text
     goal = goal_response.json()
-    assert goal["metrics"][0]["unit"] == "INR"
-    assert goal["metrics"][0]["baseline_value"] == "-1000.0000"
+    metric = goal["metrics"][0]
+    assert metric["unit"] == "sessions"
+    assert metric["baseline_value"] == "0.0000"
+    assert metric["confidence"] == 70
+    assert metric["history"][0]["value"] == "1.0000"
+    assert metric["history"][0]["confidence"] == 70
+
+    updated_metric = client.patch(
+        f"/api/v1/metrics/{metric['id']}",
+        json={"current_value": "2", "measured_on": "2026-11-12", "confidence": 80},
+    )
+    assert updated_metric.status_code == 200, updated_metric.text
+    assert updated_metric.json()["history"][0]["value"] == "2.0000"
+    assert updated_metric.json()["history"][0]["measured_on"] == "2026-11-12"
+    history_response = client.get(f"/api/v1/metrics/{metric['id']}/history")
+    assert history_response.status_code == 200
+    assert history_response.json()[0]["value"] == "2.0000"
+    assert history_response.json()[0]["measured_on"] == "2026-11-12"
+    assert history_response.json()[0]["confidence"] == 80
+
+    appended = client.post(
+        f"/api/v1/metrics/{metric['id']}/measurements",
+        json={"value": "3", "measured_on": "2026-11-13", "confidence": 90},
+    )
+    assert appended.status_code == 201, appended.text
+    refreshed = client.get(f"/api/v1/goals/{goal['id']}").json()["metrics"][0]
+    assert refreshed["current_value"] == "3.0000"
+    assert len(refreshed["history"]) == 3
+    assert refreshed["history"][0]["measured_on"] == "2026-11-13"
+    backfilled = client.post(
+        f"/api/v1/metrics/{metric['id']}/measurements",
+        json={"value": "0", "measured_on": "2026-11-10", "confidence": 25},
+    )
+    assert backfilled.status_code == 201
+    refreshed = client.get(f"/api/v1/goals/{goal['id']}").json()["metrics"][0]
+    assert refreshed["current_value"] == "3.0000"
+    assert refreshed["history"][0]["measured_on"] == "2026-11-13"
+    assert refreshed["history"][-1]["measured_on"] == "2026-11-10"
+    export_metric = client.get("/api/v1/export").json()["domain_data"]["goals"][0][
+        "metrics"
+    ][0]
+    assert len(export_metric["history"]) == 4
+    insight_metric = client.get("/api/v1/insights/progress").json()["goals"][0][
+        "metrics"
+    ][0]
+    assert insight_metric["history_count"] == 4
+    assert insight_metric["confidence"] == 90
 
     task_response = client.post(
         "/api/v1/tasks",
@@ -116,7 +216,15 @@ def test_account_ownership_and_client_cannot_claim_verified_evidence(
     db_session.add(foreign_user)
     db_session.flush()
     foreign_goal = Goal(user_id=foreign_user.id, domain="career", title="Private")
+    foreign_metric = GoalMetric(
+        goal=foreign_goal,
+        name="Private measure",
+        unit="sessions",
+        target_value=10,
+        current_value=2,
+    )
     db_session.add(foreign_goal)
+    db_session.add(foreign_metric)
     db_session.commit()
 
     assert client.get(f"/api/v1/goals/{foreign_goal.id}").status_code == 404
@@ -146,6 +254,14 @@ def test_account_ownership_and_client_cannot_claim_verified_evidence(
     )
     assert (
         client.patch(f"/api/v1/metrics/{uuid4()}", json={"target_value": 1}).status_code
+        == 404
+    )
+    assert client.get(f"/api/v1/metrics/{foreign_metric.id}/history").status_code == 404
+    assert (
+        client.post(
+            f"/api/v1/metrics/{foreign_metric.id}/measurements",
+            json={"value": 3, "measured_on": "2026-11-12"},
+        ).status_code
         == 404
     )
 

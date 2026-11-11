@@ -6,7 +6,7 @@ The sanitized PRD requirements catalog and post-build story traceability checkli
 
 ## Current stage
 
-The repository contains a FastAPI backend and responsive PWA with local account authentication, consent-aware lifecycle records, eight-domain goals and metrics, tasks/habits/evidence, persistent capacity-aware daily plans with user-controlled recovery suggestions, deterministic plan previews, a versioned and correctable XP ledger, rank thresholds, user-defined skills with self-reported evidence, a Chronicle, read-only THE CORE fallback, progress calculations, local calendar export/reminders, and a single-action agent flow that requires explicit approval and can be undone when unused. The UI follows the Inkpop visual direction and includes iPhone bottom navigation plus browser-persisted light/dark, reduced-motion, and standard-language controls. Voice input only uses browser-confirmed on-device recognition; if unavailable, use iPhone keyboard dictation. Spoken replies require a tap. See [visual requirements](docs/design/visual-requirements.md) and the PRD traceability checklist for scope and gaps.
+The repository contains a FastAPI backend and responsive PWA with local account authentication, consent-aware lifecycle records, eight configurable life areas, goals with confidence-labelled dated metric history, tasks/habits/evidence, persistent capacity-aware daily plans with user-controlled recovery suggestions, deterministic plan previews, a versioned and correctable XP ledger, rank thresholds, user-defined skills with self-reported evidence, a Chronicle, read-only THE CORE fallback, progress calculations, local calendar export/reminders, and a single-action agent flow that requires explicit approval and can be undone when unused. The UI follows the Inkpop visual direction and includes iPhone bottom navigation plus browser-persisted light/dark, reduced-motion, and standard-language controls. Voice input only uses browser-confirmed on-device recognition; if unavailable, use iPhone keyboard dictation. Spoken replies require a tap. See [visual requirements](docs/design/visual-requirements.md) and the PRD traceability checklist for scope and gaps.
 
 ## Requirements
 
@@ -57,9 +57,9 @@ This is a local-first account foundation. MFA, password recovery, and deployed l
 
 ## Goals and domain data API
 
-- GET /api/v1/domains returns the eight fixed personal domains: career, fitness, finance, discipline, learning, mental wellness, relationships, and lifestyle. Empire remains a cross-domain initiative layer.
+- GET /api/v1/domains returns the signed-in user's names, order, and visibility for the eight built-in areas: career, fitness, finance, discipline, learning, mental wellness, relationships, and lifestyle. PUT /api/v1/domains/settings saves these preferences. Hiding an area prevents new goals in it but preserves existing goals. Empire remains a cross-domain initiative layer.
 - POST /api/v1/goals creates an owned goal with an optional dated target and unit-labelled metrics; GET /api/v1/goals and GET /api/v1/goals/{id} list or retrieve owned goals; PATCH /api/v1/goals/{id} updates goal fields.
-- POST /api/v1/goals/{id}/metrics and PATCH /api/v1/metrics/{id} add or update a metric with baseline, target, current value, unit, and optional date.
+- POST /api/v1/goals/{id}/metrics and PATCH /api/v1/metrics/{id} add or update a metric with baseline, target, current value, unit, confidence, and optional date. POST /api/v1/metrics/{id}/measurements appends a dated value; GET /api/v1/metrics/{id}/history returns that metric's account-owned history. Goal exports include the measurement history.
 - GET/POST /api/v1/tasks list or create owned tasks; PATCH /api/v1/tasks/{id} records pending, completed, or skipped status and a UTC completion time.
 - GET/POST /api/v1/habits list or create owned habits with a cue, action, schedule, minimum version, and recovery action.
 - GET/POST /api/v1/evidence list or add evidence. The public API records evidence as self-reported and unverified; callers cannot mark it verified.

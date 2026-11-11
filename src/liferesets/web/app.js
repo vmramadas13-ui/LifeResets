@@ -1,6 +1,7 @@
 const $ = (selector) => document.querySelector(selector);
 const notice = $("#notice");
 let workspaceTasks = [];
+let workspaceDomains = [];
 let dailyPlan = null;
 let workspaceProgress = null;
 let coreReply = "";
@@ -166,6 +167,217 @@ async function api(path, options = {}) {
 function showNotice(message) { notice.textContent = message; }
 function formObject(form) { return Object.fromEntries(new FormData(form).entries()); }
 
+function appendInputField(form, caption, name, type, value = "", settings = {}) {
+  const label = document.createElement("label");
+  const text = document.createElement("span");
+  text.textContent = caption;
+  const input = document.createElement("input");
+  input.name = name;
+  input.type = type;
+  input.value = value;
+  if (settings.required) input.required = true;
+  if (settings.min !== undefined) input.min = String(settings.min);
+  if (settings.max !== undefined) input.max = String(settings.max);
+  if (settings.step !== undefined) input.step = String(settings.step);
+  if (settings.maxLength !== undefined) input.maxLength = settings.maxLength;
+  label.append(text, input);
+  form.append(label);
+  return input;
+}
+
+function renderDomainSettings(domains) {
+  const rows = domains.map((domain) => {
+    const row = document.createElement("div");
+    row.className = "domain-setting-row";
+    row.dataset.domainCode = domain.code;
+    appendInputField(row, "Life area name", "name", "text", domain.name, {
+      required: true,
+      maxLength: 80,
+    });
+    const orderLabel = document.createElement("label");
+    const orderText = document.createElement("span");
+    orderText.textContent = "Display order";
+    const order = document.createElement("select");
+    order.name = "sort_order";
+    for (let index = 0; index < domains.length; index += 1) {
+      order.add(new Option(String(index + 1), String(index)));
+    }
+    order.value = String(domain.sort_order);
+    order.dataset.previousOrder = order.value;
+    order.addEventListener("change", () => {
+      const previousOrder = order.dataset.previousOrder;
+      const duplicate = [...document.querySelectorAll(".domain-setting-row select[name='sort_order']")]
+        .find((candidate) => candidate !== order && candidate.value === order.value);
+      if (duplicate) {
+        duplicate.value = previousOrder;
+        duplicate.dataset.previousOrder = duplicate.value;
+      }
+      order.dataset.previousOrder = order.value;
+    });
+    orderLabel.append(orderText, order);
+    const enabledLabel = document.createElement("label");
+    enabledLabel.className = "check-row domain-enabled";
+    const enabled = document.createElement("input");
+    enabled.type = "checkbox";
+    enabled.name = "enabled";
+    enabled.checked = domain.enabled;
+    const enabledText = document.createElement("span");
+    enabledText.textContent = "Use for new goals";
+    enabledLabel.append(enabled, enabledText);
+    row.append(orderLabel, enabledLabel);
+    return row;
+  });
+  $("#domain-settings").replaceChildren(...rows);
+}
+
+function createMetricMeasurementForm(metric) {
+  const form = document.createElement("form");
+  form.className = "metric-measurement-form";
+  appendInputField(form, "Value", "value", "number", "", {
+    required: true,
+    step: "any",
+  });
+  appendInputField(form, "Measured on", "measured_on", "date", localDateString(), {
+    required: true,
+  });
+  appendInputField(form, "Confidence (0–100)", "confidence", "number", "50", {
+    required: true,
+    min: 0,
+    max: 100,
+    step: 1,
+  });
+  const save = document.createElement("button");
+  save.type = "submit";
+  save.textContent = "Save measurement";
+  form.append(save);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const payload = formObject(form);
+    payload.confidence = Number(payload.confidence);
+    try {
+      await api(`/api/v1/metrics/${metric.id}/measurements`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      await loadWorkspace();
+      showNotice("Measurement saved to the dated history.");
+    } catch (error) {
+      showNotice(error.message);
+    }
+  });
+  return form;
+}
+
+function createMetricForm(goal) {
+  const form = document.createElement("form");
+  form.className = "metric-create-form";
+  appendInputField(form, "Measure name", "name", "text", "", {
+    required: true,
+    maxLength: 120,
+  });
+  appendInputField(form, "Unit", "unit", "text", "", {
+    required: true,
+    maxLength: 40,
+  });
+  appendInputField(form, "Starting value (optional)", "baseline_value", "number", "", {
+    step: "any",
+  });
+  appendInputField(form, "Target value", "target_value", "number", "", {
+    required: true,
+    step: "any",
+  });
+  appendInputField(form, "Current value (optional)", "current_value", "number", "", {
+    step: "any",
+  });
+  appendInputField(form, "Measured on", "measured_on", "date", localDateString());
+  appendInputField(form, "Confidence (0–100)", "confidence", "number", "50", {
+    required: true,
+    min: 0,
+    max: 100,
+    step: 1,
+  });
+  const save = document.createElement("button");
+  save.type = "submit";
+  save.textContent = "Add measure";
+  form.append(save);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const payload = formObject(form);
+    payload.confidence = Number(payload.confidence);
+    for (const optional of ["baseline_value", "current_value", "measured_on"]) {
+      if (!payload[optional]) delete payload[optional];
+    }
+    try {
+      await api(`/api/v1/goals/${goal.id}/metrics`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      await loadWorkspace();
+      showNotice("Measure added to this goal.");
+    } catch (error) {
+      showNotice(error.message);
+    }
+  });
+  return form;
+}
+
+function renderGoals(goals) {
+  const rows = goals.map((goal) => {
+    const item = document.createElement("li");
+    const title = document.createElement("strong");
+    title.textContent = goal.title;
+    const domain = workspaceDomains.find((entry) => entry.code === goal.domain);
+    const meta = document.createElement("small");
+    meta.textContent = `${domain?.name || goal.domain.replaceAll("_", " ")} · ${goal.status}${goal.target_date ? ` · target ${goal.target_date}` : ""}`;
+    item.append(title, meta);
+    if (goal.metrics.length) {
+      const metrics = document.createElement("ul");
+      metrics.className = "goal-metrics";
+      for (const metric of goal.metrics) {
+        const metricItem = document.createElement("li");
+        const details = document.createElement("details");
+        const summary = document.createElement("summary");
+        summary.textContent = `${metric.name} · ${metric.current_value ?? "—"} / ${metric.target_value} ${metric.unit}`;
+        const confidence = document.createElement("small");
+        confidence.textContent = `${metric.confidence}% confidence · ${metric.history.length} dated entr${metric.history.length === 1 ? "y" : "ies"}`;
+        const history = document.createElement("ol");
+        history.className = "metric-history";
+        for (const record of metric.history) {
+          const entry = document.createElement("li");
+          entry.textContent = `${record.measured_on} · ${record.value} ${metric.unit} · ${record.confidence}% confidence · ${record.source}`;
+          history.append(entry);
+        }
+        if (!metric.history.length) {
+          const empty = document.createElement("li");
+          empty.textContent = "No dated values recorded yet.";
+          history.append(empty);
+        }
+        const addMeasurement = document.createElement("details");
+        const addSummary = document.createElement("summary");
+        addSummary.textContent = "Add a measurement";
+        addMeasurement.append(addSummary, createMetricMeasurementForm(metric));
+        details.append(summary, confidence, history, addMeasurement);
+        metricItem.append(details);
+        metrics.append(metricItem);
+      }
+      item.append(metrics);
+    }
+    const addMetric = document.createElement("details");
+    addMetric.className = "add-goal-metric";
+    const addMetricSummary = document.createElement("summary");
+    addMetricSummary.textContent = "Add a measure";
+    addMetric.append(addMetricSummary, createMetricForm(goal));
+    item.append(addMetric);
+    return item;
+  });
+  if (!rows.length) {
+    const empty = document.createElement("li");
+    empty.textContent = "No goals yet. Add one when you’re ready.";
+    rows.push(empty);
+  }
+  $("#goals").replaceChildren(...rows);
+}
+
 async function loadWorkspace() {
   $("#auth").hidden = true;
   $("#workspace").hidden = false;
@@ -178,9 +390,12 @@ async function loadWorkspace() {
     api(`/api/v1/daily-plans/${planDate}`), api(`/api/v1/daily-plans/${planDate}/recovery`),
     api("/api/v1/rpg/skills"), api("/api/v1/rpg/chronicle"), api("/api/v1/agent/actions"),
   ]);
+  workspaceDomains = domains;
+  renderDomainSettings(domains);
+  const activeDomains = domains.filter((domain) => domain.enabled);
   const domainSelect = $("#goal-form select");
-  domainSelect.replaceChildren(...domains.map((domain) => new Option(domain.name, domain.code)));
-  $("#skill-domain").replaceChildren(new Option("Choose a domain", ""), ...domains.map((domain) => new Option(domain.name, domain.code)));
+  domainSelect.replaceChildren(...activeDomains.map((domain) => new Option(domain.name, domain.code)));
+  $("#skill-domain").replaceChildren(new Option("Choose a domain", ""), ...activeDomains.map((domain) => new Option(domain.name, domain.code)));
   const activeGoals = goals.filter((goal) => goal.status === "active");
   $("#agent-goal").replaceChildren(...activeGoals.map((goal) => new Option(goal.title, goal.id)));
   $("#task-goal").replaceChildren(new Option("No goal selected", ""), ...activeGoals.map((goal) => new Option(goal.title, goal.id)));
@@ -188,12 +403,7 @@ async function loadWorkspace() {
   workspaceTasks = tasks;
   dailyPlan = currentPlan;
   workspaceProgress = rpg;
-  $("#goals").replaceChildren(...goals.map((goal) => {
-    const item = document.createElement("li");
-    const title = document.createElement("strong"); title.textContent = goal.title;
-    const meta = document.createElement("small"); meta.textContent = `${goal.domain.replaceAll("_", " ")} · ${goal.status}${goal.target_date ? ` · target ${goal.target_date}` : ""}`;
-    item.append(title, meta); return item;
-  }));
+  renderGoals(goals);
   renderPlan(preview);
   renderDailyPlan(currentPlan);
   renderRecovery(recovery);
@@ -469,9 +679,10 @@ function renderInsights(insights) {
   const rows = [];
   for (const goal of insights.goals) for (const metric of goal.metrics) {
     const item = document.createElement("li");
-    const title = document.createElement("strong"); title.textContent = `${goal.title} · ${metric.name}`;
+    const domain = workspaceDomains.find((entry) => entry.code === goal.domain);
+    const title = document.createElement("strong"); title.textContent = `${domain?.name || goal.domain.replaceAll("_", " ")} · ${goal.title} · ${metric.name}`;
     const progress = metric.progress_percent === null ? "Add baseline and current values to compare" : `${metric.progress_percent}% of stated range`;
-    const meta = document.createElement("small"); meta.textContent = `${metric.current_value ?? "—"} / ${metric.target_value} ${metric.unit} · ${progress} · ${metric.source}`;
+    const meta = document.createElement("small"); meta.textContent = `${metric.current_value ?? "—"} / ${metric.target_value} ${metric.unit} · ${progress} · ${metric.confidence}% confidence · ${metric.source}`;
     item.append(title, meta); rows.push(item);
   }
   if (!rows.length) { const empty = document.createElement("li"); empty.textContent = "Add a goal with a metric to see progress."; rows.push(empty); }
@@ -542,6 +753,26 @@ $("#login-form").addEventListener("submit", async (event) => {
   event.preventDefault(); showNotice("Signing in…");
   try { await api("/api/v1/auth/login", { method: "POST", body: JSON.stringify(formObject(event.currentTarget)) }); await loadWorkspace(); }
   catch (error) { showNotice(error.message); }
+});
+
+$("#domain-settings-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const domains = [...$("#domain-settings").querySelectorAll("[data-domain-code]")].map((row) => ({
+    code: row.dataset.domainCode,
+    name: row.querySelector('input[name="name"]').value.trim(),
+    sort_order: Number(row.querySelector('select[name="sort_order"]').value),
+    enabled: row.querySelector('input[name="enabled"]').checked,
+  }));
+  try {
+    await api("/api/v1/domains/settings", {
+      method: "PUT",
+      body: JSON.stringify({ domains }),
+    });
+    await loadWorkspace();
+    showNotice("Life area names, order, and visibility saved.");
+  } catch (error) {
+    showNotice(error.message);
+  }
 });
 
 $("#awakening-previous").addEventListener("click", () => {

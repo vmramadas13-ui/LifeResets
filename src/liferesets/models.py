@@ -222,7 +222,7 @@ class Goal(Base):
 
 
 class GoalMetric(Base):
-    """A target and optional baseline for a goal, with an explicit unit."""
+    """A target, baseline, and latest confidence for an explicit unit."""
 
     __tablename__ = "goal_metrics"
     __table_args__ = (
@@ -230,6 +230,7 @@ class GoalMetric(Base):
             "source IN ('self_report','imported','verified')",
             name="valid_metric_source",
         ),
+        CheckConstraint("confidence BETWEEN 0 AND 100", name="valid_metric_confidence"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -243,6 +244,7 @@ class GoalMetric(Base):
     )
     target_value: Mapped[Decimal] = mapped_column(Numeric(16, 4), nullable=False)
     current_value: Mapped[Decimal | None] = mapped_column(Numeric(16, 4), nullable=True)
+    confidence: Mapped[int] = mapped_column(Integer, default=50, nullable=False)
     source: Mapped[str] = mapped_column(
         String(20), default="self_report", nullable=False
     )
@@ -252,6 +254,43 @@ class GoalMetric(Base):
     )
 
     goal: Mapped[Goal] = relationship(back_populates="metrics")
+    measurements: Mapped[list[MetricMeasurement]] = relationship(
+        back_populates="metric",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="MetricMeasurement.recorded_on",
+    )
+
+
+class MetricMeasurement(Base):
+    """A dated, confidence-labelled measurement entered by the account owner."""
+
+    __tablename__ = "metric_measurements"
+    __table_args__ = (
+        CheckConstraint(
+            "confidence BETWEEN 0 AND 100", name="valid_measurement_confidence"
+        ),
+        CheckConstraint(
+            "source IN ('self_report','imported','verified')",
+            name="valid_measurement_source",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    metric_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("goal_metrics.id", ondelete="CASCADE"), index=True
+    )
+    value: Mapped[Decimal] = mapped_column(Numeric(16, 4), nullable=False)
+    recorded_on: Mapped[date] = mapped_column(Date, nullable=False)
+    confidence: Mapped[int] = mapped_column(Integer, default=50, nullable=False)
+    source: Mapped[str] = mapped_column(
+        String(20), default="self_report", nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+    metric: Mapped[GoalMetric] = relationship(back_populates="measurements")
 
 
 class Task(Base):
