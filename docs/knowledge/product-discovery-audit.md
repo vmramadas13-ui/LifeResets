@@ -55,7 +55,7 @@ Status labels mean: **implemented** = present in the current code and aligned wi
 
 Continue the PRD's build sequence and apply the discovery choices as acceptance context:
 
-1. Finish the current character/progression and approval-gated task-action slice. Run migration, test, lint, format, and iPhone-width smoke checks before calling it verified; do not migrate the user's real database until a separate backup is confirmed.
+1. The character/progression and approval-gated task-action slice is implemented, locally verified, pushed, and CI-checked. Open its review request when GitHub authentication is available; before applying its migration to the user database, create and verify a separate backup. Continue with guided Awakening and the seven-day assessment.
 2. Complete the local-first iPhone foundation: private Tailscale access, secure transport, laptop startup/recovery, and scheduled encrypted backup/restore verification. Never enable public exposure as a shortcut.
 3. Add guided Awakening, domain/metric editing and history, recurring habits, review ceremonies, and the seven-day/90-day campaign lifecycle.
 4. Agree on transparent XP, rank review, and optional demotion rules; then build attributes and the remaining character progression. Keep Life Score deferred until its formula and missing-data behavior are approved.
