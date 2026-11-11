@@ -1,4 +1,4 @@
-const CACHE = "liferesets-shell-v1";
+const CACHE = "liferesets-shell-v2";
 const SHELL = ["/", "/static/app.css", "/static/app.js", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {

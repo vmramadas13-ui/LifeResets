@@ -10,26 +10,51 @@
     <title>LifeResets</title>
   </head>
   <body>
-    <header><div><p class="eyebrow">YOUR PERSONAL WORKSPACE</p><h1>LifeResets</h1></div><button id="logout" class="quiet" hidden>Sign out</button></header>
-    <main>
+    <header class="site-header"><div class="brand-lockup"><span class="brand-mark" aria-hidden="true">L</span><div><p class="eyebrow">A PERSONAL SYSTEM FOR STEADY PROGRESS</p><h1>LifeResets</h1></div></div><button id="logout" class="quiet" hidden>Sign out</button></header>
+    <main class="page-shell">
       <p id="notice" role="status" aria-live="polite">Sign in to open your private workspace.</p>
       <section id="auth" class="card">
-        <h2>Sign in</h2>
+        <p class="eyebrow">YOUR PRIVATE SPACE</p><h2>Welcome back</h2>
         <form id="login-form"><label>Email<input type="email" name="email" required autocomplete="username"></label><label>Password<input type="password" name="password" required autocomplete="current-password"></label><button>Sign in</button></form>
       </section>
       <div id="workspace" hidden>
-        <section class="card"><p class="eyebrow">START WHERE YOU ARE</p><h2>Awakening</h2><p class="hint">Seven steps. Skip or resume whenever you choose; this checklist does not collect your answers.</p><ol id="awakening" class="record-list"></ol></section>
+        <section class="daily-shell card" aria-labelledby="daily-title">
+          <div class="daily-hero">
+            <div><p class="eyebrow">TODAY, AT YOUR PACE</p><h2 id="daily-title">Shape a day that fits.</h2><p class="daily-intro">Choose a few useful actions around the time and energy you have. You can adjust the plan whenever life changes.</p></div>
+            <div class="sprout-figure" role="img" aria-label="A small sprout, a reminder that fresh starts are possible." title="A fresh start, whenever you need one.">
+              <svg viewBox="0 0 120 120" aria-hidden="true" focusable="false"><path class="sprout-shadow" d="M18 103h84"/><path class="sprout-stem" d="M60 75c-2-17 3-28 12-38"/><path class="sprout-leaf sprout-leaf-left" d="M59 56C37 57 29 42 32 28c16 1 29 10 27 28Z"/><path class="sprout-leaf sprout-leaf-right" d="M67 43c1-18 15-26 29-24 0 16-11 27-29 24Z"/><path class="sprout-pot" d="M37 69h46l-5 34H42l-5-34Z"/><path class="sprout-pot-top" d="M34 66h52v10H34z"/><circle class="sprout-eye" cx="53" cy="87" r="2.6"/><circle class="sprout-eye" cx="68" cy="87" r="2.6"/><path class="sprout-smile" d="M55 94c4 4 8 4 12 0"/><path class="sprout-spark" d="M20 42v12m-6-6h12m64 39v10m-5-5h10"/></svg>
+            </div>
+            <div class="recovery-badge"><span class="badge-dot" aria-hidden="true"></span>No penalty for a missed day</div>
+          </div>
+          <form id="daily-plan-form">
+            <div class="plan-controls">
+              <label>Plan date<input id="daily-plan-date" name="plan_date" type="date" required></label>
+              <label>Time available<input id="plan-capacity" name="capacity_minutes" type="number" min="1" max="1440" step="1" value="120" required><span class="field-hint">Minutes for your selected actions</span></label>
+              <label>Energy today<select id="plan-energy" name="energy"><option value="low">Low · keep it light</option><option value="medium" selected>Steady · usual pace</option><option value="high">Good · more room</option></select></label>
+            </div>
+            <div class="plan-summary" aria-live="polite"><div><span class="eyebrow">TIME PLANNED</span><strong id="plan-time-summary">0 of 120 min</strong></div><div class="capacity-track" aria-hidden="true"><span id="capacity-fill"></span></div><p id="capacity-message" class="hint">Leave room for the unexpected.</p></div>
+            <div class="task-pick-heading"><div><p class="eyebrow">A SHORT LIST IS ENOUGH</p><h3>Choose your actions</h3></div><span class="selection-count" id="selection-count">0 selected</span></div>
+            <ul id="task-options" class="task-options" aria-label="Actions available to plan"></ul>
+            <p id="task-empty" class="empty-note" hidden>No open actions yet. Add one below when you’re ready.</p>
+            <div class="plan-actions"><button id="save-daily-plan" type="submit">Save today’s plan</button><span id="plan-save-state" class="field-hint"></span></div>
+          </form>
+          <details class="add-action"><summary>+ Add an action</summary><form id="task-form" class="task-create-form"><label>Action<input name="title" maxlength="160" placeholder="For example, study one lesson" required></label><label>Due date (optional)<input name="due_date" type="date"></label><label>Connected goal (optional)<select name="goal_id" id="task-goal"><option value="">No goal selected</option></select></label><button type="submit" class="quiet">Add action</button></form></details>
+          <section class="saved-plan" aria-labelledby="saved-plan-title"><div class="task-pick-heading"><div><p class="eyebrow">YOUR SAVED CHOICES</p><h3 id="saved-plan-title">Plan actions</h3></div><span id="plan-energy-label" class="energy-pill">Steady energy</span></div><ul id="saved-plan-items" class="saved-plan-list" aria-live="polite"></ul><p id="saved-plan-empty" class="empty-note">Your saved actions will appear here.</p></section>
+          <section class="recovery-panel" aria-labelledby="recovery-title"><div class="recovery-heading"><div><p class="eyebrow">WHEN YOU’RE READY TO RETURN</p><h3 id="recovery-title">Pick up what still matters</h3><p class="hint">Unfinished actions stay here as suggestions. Nothing moves into today unless you choose it.</p></div><button id="refresh-recovery" type="button" class="quiet">Check for suggestions</button></div><ul id="recovery-list" class="recovery-list" aria-live="polite"></ul></section>
+        </section>
+        <section class="card"><p class="eyebrow">START WHERE YOU ARE</p><h2><span data-game-term="Awakening" data-standard-term="Onboarding">Awakening</span></h2><p class="hint">Seven steps. Skip or resume whenever you choose; this checklist does not collect your answers.</p><ol id="awakening" class="record-list"></ol></section>
         <section class="card"><div class="section-heading"><div><p class="eyebrow">YOUR DIRECTION</p><h2>Goals</h2></div><button id="refresh-goals" class="quiet">Refresh</button></div><ul id="goals" class="record-list"></ul>
           <details><summary>Add a goal</summary><form id="goal-form"><label>Domain<select name="domain" required></select></label><label>Goal title<input name="title" maxlength="160" required></label><label>Target date<input name="target_date" type="date"></label><button>Create goal</button></form></details>
         </section>
-        <section class="card"><p class="eyebrow">A 90-DAY FOCUS</p><h2>Campaigns</h2><ul id="campaigns" class="record-list"></ul><form id="campaign-form"><label>Campaign title<input name="title" maxlength="160" required></label><label>Objective<input name="objective" maxlength="2000" required></label><label>Start date<input name="starts_on" type="date" required></label><label>End date (90 days)<input name="ends_on" type="date" required></label><button>Create campaign</button></form></section>
+        <section class="card"><p class="eyebrow">A 90-DAY FOCUS</p><h2><span data-game-term="Campaigns" data-standard-term="Long-range focus">Campaigns</span></h2><ul id="campaigns" class="record-list"></ul><form id="campaign-form"><label>Campaign title<input name="title" maxlength="160" required></label><label>Objective<input name="objective" maxlength="2000" required></label><label>Start date<input name="starts_on" type="date" required></label><label>End date (90 days)<input name="ends_on" type="date" required></label><button>Create campaign</button></form></section>
         <section class="card"><p class="eyebrow">WEEKLY AND MONTHLY CHECK-IN</p><h2>Reviews</h2><ul id="reviews" class="record-list"></ul><form id="review-form"><label>Review type<select name="cadence"><option value="weekly">Weekly Tribunal</option><option value="monthly">Monthly Ascension</option></select></label><label>Period start<input name="period_start" type="date" required></label><label>Period end<input name="period_end" type="date" required></label><button>Start review</button></form><p class="hint">Free-text reflections require separate reflection_storage consent through the consent API.</p></section>
         <section class="card"><div class="section-heading"><div><p class="eyebrow">A SMALL NEXT STEP</p><h2>Plan preview</h2></div><button id="refresh-plan" class="quiet">Build preview</button></div><ul id="quests" class="record-list"></ul><p class="hint">Preview only. Nothing is saved or scheduled.</p></section>
         <section class="card"><div class="section-heading"><div><p class="eyebrow">UPCOMING</p><h2>Reminders</h2></div><button id="refresh-inbox" class="quiet">Refresh</button></div><ul id="inbox" class="record-list"></ul><p><a href="/api/v1/calendar.ics">Download calendar (.ics)</a></p><p class="hint">In-app only. No push or external calendar delivery is connected.</p></section>
-        <section class="card"><p class="eyebrow">VISIBLE PROGRESS</p><h2>Journey</h2><p id="rpg-status">Loading…</p></section>
+        <section class="card"><p class="eyebrow">VISIBLE PROGRESS</p><h2><span data-game-term="Journey" data-standard-term="Progress">Journey</span></h2><p id="rpg-status">Loading…</p></section>
         <section class="card"><div class="section-heading"><div><p class="eyebrow">YOUR MEASUREMENTS</p><h2>Progress</h2></div><button id="refresh-insights" class="quiet">Refresh</button></div><ul id="insights" class="record-list"></ul><p class="hint">Arithmetic comparisons only. Units and evidence source are shown.</p></section>
         <section class="card"><p class="eyebrow">REFLECTION</p><h2>THE CORE</h2><form id="core-form"><label>Ask a question<textarea name="question" rows="3" maxlength="1000" required></textarea></label><button>Review my saved context</button></form><p id="core-answer"></p><p class="hint">Local fallback summarizes saved records; no external AI provider is connected.</p></section>
         <section class="card"><p class="eyebrow">USER CONTROL</p><h2>Next-step proposal</h2><form id="agent-form"><label>Active goal<select name="goal_id" id="agent-goal" required></select></label><button>Preview a proposal</button></form><p id="agent-proposal"></p><p class="hint">Preview only. The agent cannot create tasks, access external services, or run tools.</p></section>
+        <section class="card settings-panel"><p class="eyebrow">MAKE IT YOURS</p><h2>Display settings</h2><p class="hint">These choices affect this browser only.</p><div class="settings-grid"><label class="setting-row"><span><strong>Dark appearance</strong><small>Use a night-sky background and light text.</small></span><input id="theme-toggle" type="checkbox"></label><label class="setting-row"><span><strong>Reduce motion</strong><small>Keep transitions brief and quiet.</small></span><input id="motion-toggle" type="checkbox"></label><label class="setting-row"><span><strong>Standard language</strong><small>Use plain labels in place of game terms.</small></span><input id="language-toggle" type="checkbox"></label></div></section>
       </div>
     </main>
     <script src="/static/app.js" defer></script>

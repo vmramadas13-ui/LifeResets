@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from liferesets.agent import router as agent_router
 from liferesets.core import answer_read_only
+from liferesets.daily_planning import router as daily_planning_router
 from liferesets.database import database_is_ready, get_db
 from liferesets.domain_data import router as domain_data_router
 from liferesets.error_handlers import register_error_handlers
@@ -34,6 +35,7 @@ register_error_handlers(app)
 app.include_router(identity_router)
 app.include_router(domain_data_router)
 app.include_router(planning_router)
+app.include_router(daily_planning_router)
 app.include_router(rpg_router)
 app.include_router(insights_router)
 app.include_router(notifications_router)
