@@ -11,6 +11,7 @@ let activeAgentActionId = null;
 let awakeningData = null;
 let awakeningStepIndex = 0;
 let reflectionStorageConsent = false;
+let importedCalendarPreview = null;
 
 function readPreference(name, fallback = "false") {
   try { return localStorage.getItem(`lr-${name}`) ?? fallback; }
@@ -964,6 +965,13 @@ function renderDailyPlan(plan) {
   $("#day-start-time").value = plan.day_start_time || "09:00";
   $("#day-end-time").value = plan.day_end_time || "21:00";
   renderBusyWindowEditor(plan.busy_windows || []);
+  const calendarExport = $("#calendar-plan-export");
+  const hasTimedActions = plan.items.some((item) =>
+    item.status === "planned" && item.suggested_start && item.suggested_end
+  );
+  calendarExport.href = `/api/v1/daily-plans/${plan.plan_date}/calendar.ics`;
+  calendarExport.hidden = !plan.is_saved || !hasTimedActions;
+  $("#calendar-plan-export-hint").hidden = !plan.is_saved || !hasTimedActions;
   const energyLabels = { low: "Low energy", medium: "Steady energy", high: "High energy" };
   $("#plan-energy-label").textContent = energyLabels[plan.energy] || "Energy";
   $("#time-block-summary").textContent = plan.is_saved
@@ -1078,6 +1086,23 @@ function createBusyWindowRow(window = {}) {
 
 function renderBusyWindowEditor(windows) {
   $("#busy-window-list").replaceChildren(...windows.map(createBusyWindowRow));
+}
+
+function mergeTimeWindows(windows) {
+  const sorted = windows
+    .filter((window) => window.start_time && window.end_time)
+    .map((window) => ({ ...window }))
+    .sort((left, right) => left.start_time.localeCompare(right.start_time));
+  const merged = [];
+  for (const window of sorted) {
+    const previous = merged.at(-1);
+    if (previous && window.start_time <= previous.end_time) {
+      if (window.end_time > previous.end_time) previous.end_time = window.end_time;
+    } else {
+      merged.push(window);
+    }
+  }
+  return merged;
 }
 
 function makePlanItemButton(label, action, className = "quiet", context = "action") {
@@ -2416,6 +2441,102 @@ $("#daily-plan-form").addEventListener("submit", async (event) => {
     renderRecovery(await api(`/api/v1/daily-plans/${saved.plan_date}/recovery`));
     showNotice("Your daily plan is saved.");
   } catch (error) { showNotice(error.message); }
+});
+
+$("#calendar-import-file").addEventListener("change", () => {
+  importedCalendarPreview = null;
+  $("#calendar-import-preview-list").replaceChildren();
+  $("#calendar-import-apply").disabled = true;
+});
+
+$("#calendar-import-preview-button").addEventListener("click", async () => {
+  const file = $("#calendar-import-file").files[0];
+  const planDate = $("#daily-plan-date").value;
+  if (!file || !planDate) {
+    showNotice("Choose a calendar file and plan date first.");
+    return;
+  }
+  const button = $("#calendar-import-preview-button");
+  button.disabled = true;
+  try {
+    const result = await api("/api/v1/calendar/import-preview", {
+      method: "POST",
+      body: JSON.stringify({
+        plan_date: planDate,
+        ics_content: await file.text(),
+        day_start_time: $("#day-start-time").value,
+        day_end_time: $("#day-end-time").value,
+      }),
+    });
+    if (planDate !== $("#daily-plan-date").value) {
+      importedCalendarPreview = null;
+      showNotice("The plan date changed. Preview the calendar file again.");
+      return;
+    }
+    importedCalendarPreview = result;
+    const rows = result.windows.map((window) => {
+      const row = document.createElement("li");
+      row.textContent = `Busy ${window.start_time}–${window.end_time}`;
+      return row;
+    });
+    if (!result.windows.length) {
+      const empty = document.createElement("li");
+      empty.textContent = "No busy times were found for this plan date.";
+      rows.push(empty);
+    }
+    if (result.recurring_events_skipped || result.events_skipped) {
+      const note = document.createElement("li");
+      note.textContent = `${result.recurring_events_skipped} recurring event${result.recurring_events_skipped === 1 ? " was" : "s were"} and ${result.events_skipped} unreadable event${result.events_skipped === 1 ? " was" : "s were"} skipped.`;
+      rows.push(note);
+    }
+    $("#calendar-import-preview-list").replaceChildren(...rows);
+    $("#calendar-import-apply").disabled = !result.can_apply;
+    showNotice(result.can_apply
+      ? `Preview ready for ${result.plan_date}. Review the busy times, then add them to your plan.`
+      : result.too_many_windows
+        ? "This date has more than 12 separate busy periods. Import a smaller set or add the times you want manually."
+        : "There are no usable busy times to add for this date.");
+  } catch (error) {
+    importedCalendarPreview = null;
+    $("#calendar-import-preview-list").replaceChildren();
+    $("#calendar-import-apply").disabled = true;
+    showNotice(error.message);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$("#calendar-import-apply").addEventListener("click", () => {
+  if (!importedCalendarPreview || importedCalendarPreview.plan_date !== $("#daily-plan-date").value) {
+    showNotice("Preview a calendar file for the selected plan date first.");
+    return;
+  }
+  const current = [...$("#busy-window-list").querySelectorAll(".busy-window-row")].map((row) => ({
+    start_time: row.querySelector('[data-busy-time="start_time"]').value,
+    end_time: row.querySelector('[data-busy-time="end_time"]').value,
+  }));
+  const merged = mergeTimeWindows([...current, ...importedCalendarPreview.windows]);
+  if (merged.length > 12) {
+    showNotice("This plan can hold up to 12 separate busy times. Remove a time or import fewer events.");
+    return;
+  }
+  renderBusyWindowEditor(merged);
+  $("#calendar-import-apply").disabled = true;
+  showNotice("Busy times added to the plan editor. Save today’s plan to keep them.");
+});
+
+$("#daily-plan-date").addEventListener("change", () => {
+  importedCalendarPreview = null;
+  $("#calendar-import-preview-list").replaceChildren();
+  $("#calendar-import-apply").disabled = true;
+});
+
+["#day-start-time", "#day-end-time"].forEach((selector) => {
+  $(selector).addEventListener("change", () => {
+    importedCalendarPreview = null;
+    $("#calendar-import-preview-list").replaceChildren();
+    $("#calendar-import-apply").disabled = true;
+  });
 });
 
 $("#add-busy-window").addEventListener("click", () => {

@@ -268,6 +268,12 @@ details form { margin-top: 15px; }
 .plan-controls .field-hint { margin-top: -3px; font-size: .77rem; font-weight: 550; }
 .schedule-context { margin-top: 16px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); }
 .schedule-context > .hint { margin: 4px 0 12px; }
+.calendar-import { display: grid; gap: 8px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.calendar-import > button { justify-self: start; }
+.calendar-import-preview { margin: 0; padding-left: 22px; color: var(--muted); }
+.calendar-import-preview li { padding: 3px 0; }
+.calendar-plan-export { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; color: var(--ink); font-weight: 750; }
+.calendar-plan-export[hidden] { display: none; }
 .schedule-hours { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; max-width: 620px; }
 .busy-window-list { display: grid; gap: 8px; margin: 10px 0; }
 .busy-window-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)) auto; gap: 10px; align-items: end; max-width: 720px; }

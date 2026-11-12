@@ -11,6 +11,11 @@ def test_web_shell_and_pwa_files_are_served() -> None:
         assert page.status_code == 200
         assert "LifeResets" in page.text
         assert 'id="daily-plan-form"' in page.text
+        assert 'id="calendar-import-file"' in page.text
+        assert 'id="calendar-import-preview-button"' in page.text
+        assert 'id="calendar-import-apply"' in page.text
+        assert 'id="calendar-plan-export"' in page.text
+        assert 'id="calendar-plan-export-hint"' in page.text
         assert 'id="quests-section"' in page.text
         assert 'id="quest-form"' in page.text
         assert 'id="quest-list"' in page.text
@@ -51,6 +56,11 @@ def test_web_shell_and_pwa_files_are_served() -> None:
         assert 'method: "PATCH"' in app_script.text
         assert "suggested ${planItem.suggested_start}" in app_script.text
         assert "leave busy times clear" in app_script.text
+        assert '"/api/v1/calendar/import-preview"' in app_script.text
+        assert (
+            "calendarExport.href = `/api/v1/daily-plans/${plan.plan_date}/calendar.ics`"
+            in app_script.text
+        )
         assert "Reschedule history ·" in app_script.text
         assert "updateHabitBuilderPreview" in app_script.text
         assert 'api("/api/v1/quests")' in app_script.text
@@ -98,7 +108,7 @@ def test_web_shell_and_pwa_files_are_served() -> None:
         assert client.get("/static/app-icon-512.png").status_code == 200
         worker = client.get("/sw.js")
         assert worker.status_code == 200
-        assert 'const CACHE = "liferesets-shell-v5"' in worker.text
+        assert 'const CACHE = "liferesets-shell-v6"' in worker.text
         assert worker.headers["service-worker-allowed"] == "/"
         assert 'url.pathname.startsWith("/api/")' in worker.text
         assert client.get("/static/app.js").status_code == 200

@@ -124,6 +124,43 @@ def test_plan_saves_capacity_energy_and_user_task_decisions(
     )
 
 
+def test_daily_calendar_export_contains_only_scheduled_actions(
+    client, test_user
+) -> None:
+    _login(client, test_user)
+    first = _create_task(client, "Study, one lesson")
+    second = _create_task(client, "Take a walk")
+    saved = client.put(
+        "/api/v1/daily-plans/2026-11-13",
+        json={
+            "capacity_minutes": 90,
+            "energy": "medium",
+            "day_start_time": "09:00",
+            "day_end_time": "21:00",
+            "busy_windows": [{"start_time": "10:00", "end_time": "11:00"}],
+            "items": [
+                {"task_id": first["id"], "planned_minutes": 30},
+                {"task_id": second["id"], "planned_minutes": 30},
+            ],
+        },
+    )
+    assert saved.status_code == 200, saved.text
+
+    calendar = client.get("/api/v1/daily-plans/2026-11-13/calendar.ics")
+    assert calendar.status_code == 200
+    assert "liferesets-2026-11-13.ics" in calendar.headers["content-disposition"]
+    assert calendar.text.count("BEGIN:VEVENT") == 2
+    assert "STATUS:TENTATIVE" in calendar.text
+    assert "DTSTART:20261113T033000Z" in calendar.text
+    assert "DTSTART:20261113T040000Z" in calendar.text
+    assert "SUMMARY:Study\\, one lesson" in calendar.text
+
+
+def test_daily_calendar_export_requires_a_saved_plan(client, test_user) -> None:
+    _login(client, test_user)
+    assert client.get("/api/v1/daily-plans/2026-11-13/calendar.ics").status_code == 404
+
+
 def test_plan_rejects_over_capacity_duplicates_and_foreign_tasks(
     client, test_user, db_session: Session
 ) -> None:

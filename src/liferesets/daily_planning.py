@@ -5,8 +5,9 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Literal
 from uuid import UUID
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -17,6 +18,7 @@ from liferesets.models import (
     DailyPlan,
     DailyPlanBusyWindow,
     DailyPlanItem,
+    Profile,
     Task,
     TaskRescheduleEvent,
     User,
@@ -248,6 +250,88 @@ def get_daily_plan(
             "is_saved": False,
         }
     return _plan_payload(plan)
+
+
+def _calendar_escape(value: str) -> str:
+    return (
+        value.replace("\\", "\\\\")
+        .replace(";", "\\;")
+        .replace(",", "\\,")
+        .replace("\n", "\\n")
+        .replace("\r", "")
+    )
+
+
+@router.get("/{plan_date}/calendar.ics")
+def export_approved_daily_plan(
+    plan_date: date,
+    auth: Authenticated,
+    db: Session = Depends(get_db),
+) -> Response:
+    """Create a calendar file only when the signed-in user requests export."""
+    plan = db.scalar(
+        select(DailyPlan)
+        .where(DailyPlan.user_id == auth.user.id, DailyPlan.plan_date == plan_date)
+        .options(
+            selectinload(DailyPlan.items).selectinload(DailyPlanItem.task),
+            selectinload(DailyPlan.busy_windows),
+        )
+    )
+    if plan is None:
+        raise HTTPException(status_code=404, detail="No saved plan for this date")
+
+    profile = db.get(Profile, auth.user.id)
+    timezone_name = profile.timezone if profile else "UTC"
+    try:
+        user_zone = ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError:
+        user_zone = ZoneInfo("UTC")
+
+    suggested = _suggested_time_blocks(plan, plan.items)
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//LifeResets//Approved Daily Plan//EN",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+    ]
+    for item in sorted(plan.items, key=lambda candidate: candidate.position):
+        if item.status != "planned" or item.task.status in {"completed", "skipped"}:
+            continue
+        start_time, end_time = suggested.get(item.id, (None, None))
+        if start_time is None or end_time is None:
+            continue
+        local_start = datetime.combine(
+            plan_date, time.fromisoformat(start_time), tzinfo=user_zone
+        )
+        local_end = datetime.combine(
+            plan_date, time.fromisoformat(end_time), tzinfo=user_zone
+        )
+        start_utc = local_start.astimezone(UTC).strftime("%Y%m%dT%H%M%SZ")
+        end_utc = local_end.astimezone(UTC).strftime("%Y%m%dT%H%M%SZ")
+        lines.extend(
+            [
+                "BEGIN:VEVENT",
+                f"UID:{item.id}@liferesets.local",
+                f"DTSTAMP:{stamp}",
+                f"DTSTART:{start_utc}",
+                f"DTEND:{end_utc}",
+                "STATUS:TENTATIVE",
+                f"SUMMARY:{_calendar_escape(item.task.title)}",
+                "END:VEVENT",
+            ]
+        )
+    lines.append("END:VCALENDAR")
+    return Response(
+        content="\r\n".join(lines) + "\r\n",
+        media_type="text/calendar; charset=utf-8",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="liferesets-{plan_date.isoformat()}.ics"'
+            )
+        },
+    )
 
 
 @router.put("/{plan_date}")

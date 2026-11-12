@@ -1,4 +1,4 @@
-const CACHE = "liferesets-shell-v5";
+const CACHE = "liferesets-shell-v6";
 const SHELL = ["/", "/static/app.css", "/static/app.js", "/manifest.webmanifest", "/static/apple-touch-icon.png", "/static/app-icon-192.png", "/static/app-icon-512.png"];
 
 self.addEventListener("install", (event) => {
