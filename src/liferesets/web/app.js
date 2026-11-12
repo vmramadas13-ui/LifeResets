@@ -1471,11 +1471,199 @@ function renderAwakeningBaselines(awakening, step) {
 function renderCampaigns(campaigns) {
   const rows = campaigns.map((campaign) => {
     const item = document.createElement("li");
-    const title = document.createElement("strong"); title.textContent = campaign.title;
-    const detail = document.createElement("small"); detail.textContent = `${campaign.starts_on} to ${campaign.ends_on} · ${campaign.status}`;
-    item.append(title, detail); return item;
+    item.className = "campaign-card";
+    const title = document.createElement("strong");
+    title.textContent = campaign.title;
+    const detail = document.createElement("small");
+    detail.textContent = `${campaign.starts_on} to ${campaign.ends_on} · ${campaign.status}`;
+    const objective = document.createElement("p");
+    objective.textContent = campaign.objective;
+    const workspace = document.createElement("details");
+    workspace.className = "campaign-workspace";
+    const summary = document.createElement("summary");
+    summary.textContent = "Open 90-day plan";
+    workspace.append(summary);
+
+    const campaignForm = document.createElement("form");
+    campaignForm.className = "campaign-edit-form";
+    appendInputField(campaignForm, "Campaign title", "title", "text", campaign.title, { required: true, maxLength: 160 });
+    appendTextareaField(campaignForm, "Objective", "objective", campaign.objective, 2000);
+    appendSelectField(campaignForm, "Campaign status", "status", campaign.status, ["active", "paused", "completed", "archived"]);
+    appendTextareaField(campaignForm, "Reason for an objective change (optional)", "scope_change_reason", "", 1200);
+    addCampaignSubmit(campaignForm, `/api/v1/campaigns/${campaign.id}`, "PATCH", "Campaign updated.");
+    workspace.append(campaignForm);
+
+    const arcsHeading = document.createElement("h3");
+    arcsHeading.textContent = "Weekly arcs";
+    workspace.append(arcsHeading);
+    for (const arc of campaign.arcs || []) {
+      const arcDetails = document.createElement("details");
+      arcDetails.className = "campaign-arc";
+      const arcSummary = document.createElement("summary");
+      arcSummary.textContent = `Week ${arc.week_number} · ${arc.starts_on} to ${arc.ends_on} · ${arc.status}`;
+      const arcForm = document.createElement("form");
+      appendInputField(arcForm, "Week title", "title", "text", arc.title, { required: true, maxLength: 160 });
+      appendTextareaField(arcForm, "Weekly focus", "focus", arc.focus || "", 2000);
+      appendSelectField(arcForm, "Week status", "status", arc.status, ["planned", "active", "completed", "skipped"]);
+      addCampaignSubmit(arcForm, `/api/v1/campaigns/${campaign.id}/arcs/${arc.id}`, "PATCH", `Week ${arc.week_number} updated.`);
+      arcDetails.append(arcSummary, arcForm);
+
+      const checkpointsHeading = document.createElement("h4");
+      checkpointsHeading.textContent = "Checkpoints";
+      arcDetails.append(checkpointsHeading);
+      const checkpointList = document.createElement("ul");
+      checkpointList.className = "campaign-checkpoints";
+      for (const checkpoint of arc.checkpoints || []) {
+        const checkpointRow = document.createElement("li");
+        const checkpointForm = document.createElement("form");
+        checkpointForm.className = "campaign-checkpoint-form";
+        appendInputField(checkpointForm, "Checkpoint", "title", "text", checkpoint.title, { required: true, maxLength: 160 });
+        const dueDate = appendInputField(checkpointForm, "Due date", "due_on", "date", checkpoint.due_on, { required: true });
+        dueDate.min = arc.starts_on;
+        dueDate.max = arc.ends_on;
+        appendSelectField(checkpointForm, "Status", "status", checkpoint.status, ["pending", "completed", "skipped"]);
+        addCampaignSubmit(checkpointForm, `/api/v1/campaigns/${campaign.id}/checkpoints/${checkpoint.id}`, "PATCH", "Checkpoint updated.");
+        checkpointRow.append(checkpointForm);
+        checkpointList.append(checkpointRow);
+      }
+      if (!arc.checkpoints?.length) {
+        const empty = document.createElement("li");
+        empty.textContent = "No checkpoints for this week yet.";
+        checkpointList.append(empty);
+      }
+      arcDetails.append(checkpointList);
+
+      const checkpointForm = document.createElement("form");
+      checkpointForm.className = "campaign-checkpoint-create";
+      const checkpointTitle = appendInputField(checkpointForm, "Add a checkpoint", "title", "text", "", { required: true, maxLength: 160 });
+      checkpointTitle.placeholder = "A small, observable milestone";
+      const checkpointDate = appendInputField(checkpointForm, "Due date", "due_on", "date", arc.starts_on, { required: true });
+      checkpointDate.min = arc.starts_on;
+      checkpointDate.max = arc.ends_on;
+      addCampaignSubmit(checkpointForm, `/api/v1/campaigns/${campaign.id}/arcs/${arc.id}/checkpoints`, "POST", "Checkpoint added.");
+      arcDetails.append(checkpointForm);
+      workspace.append(arcDetails);
+    }
+
+    const scopeHeading = document.createElement("h3");
+    scopeHeading.textContent = "Objective changes";
+    workspace.append(scopeHeading);
+    const scopeList = document.createElement("ul");
+    scopeList.className = "campaign-scope-history";
+    for (const change of campaign.scope_changes || []) {
+      const entry = document.createElement("li");
+      const summaryText = document.createElement("p");
+      summaryText.textContent = `${change.previous_objective} → ${change.new_objective}`;
+      const reasonText = document.createElement("small");
+      reasonText.textContent = change.reason || "No reason recorded.";
+      entry.append(summaryText, reasonText);
+      scopeList.append(entry);
+    }
+    if (!campaign.scope_changes?.length) {
+      const empty = document.createElement("li");
+      empty.textContent = "No objective changes recorded.";
+      scopeList.append(empty);
+    }
+    workspace.append(scopeList);
+
+    const retrospectiveDetails = document.createElement("details");
+    retrospectiveDetails.className = "campaign-retrospective";
+    const retrospectiveSummary = document.createElement("summary");
+    retrospectiveSummary.textContent = "Campaign retrospective";
+    const retrospective = campaign.retrospective || {};
+    const retrospectiveForm = document.createElement("form");
+    for (const [key, label] of [["wins", "What went well?"], ["blockers", "What got in the way?"], ["learnings", "What did you learn?"], ["next_focus", "What will you focus on next?"]]) {
+      const field = appendTextareaField(retrospectiveForm, label, key, retrospective[key] || "", 3000);
+      field.disabled = !reflectionStorageConsent;
+      field.rows = 3;
+    }
+    const saveRetrospective = document.createElement("button");
+    saveRetrospective.type = "submit";
+    saveRetrospective.textContent = "Save retrospective";
+    saveRetrospective.disabled = !reflectionStorageConsent;
+    retrospectiveForm.append(saveRetrospective);
+    retrospectiveForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      try {
+        await api(`/api/v1/campaigns/${campaign.id}/retrospective`, { method: "PUT", body: JSON.stringify(formObject(retrospectiveForm)) });
+        await loadWorkspace();
+        showNotice("Campaign retrospective saved.");
+      } catch (error) { showNotice(error.message); }
+    });
+    const deleteRetrospective = document.createElement("button");
+    deleteRetrospective.type = "button";
+    deleteRetrospective.className = "quiet";
+    deleteRetrospective.textContent = "Delete saved retrospective";
+    deleteRetrospective.disabled = !campaign.retrospective;
+    deleteRetrospective.addEventListener("click", async () => {
+      try {
+        await api(`/api/v1/campaigns/${campaign.id}/retrospective`, { method: "DELETE" });
+        await loadWorkspace();
+        showNotice("Saved retrospective deleted.");
+      } catch (error) { showNotice(error.message); }
+    });
+    const consentHint = document.createElement("p");
+    consentHint.className = "hint";
+    consentHint.textContent = reflectionStorageConsent
+      ? "Saved locally and included in your account export."
+      : "Allow reflection storage in Reviews before saving. You can delete saved notes at any time.";
+    retrospectiveDetails.append(retrospectiveSummary, retrospectiveForm, deleteRetrospective, consentHint);
+    workspace.append(retrospectiveDetails);
+
+    item.append(title, detail, objective, workspace);
+    return item;
   });
+  if (!rows.length) {
+    const empty = document.createElement("li");
+    empty.textContent = "Start a 90-day campaign to set a direction and weekly focus.";
+    rows.push(empty);
+  }
   $("#campaigns").replaceChildren(...rows);
+}
+
+function appendTextareaField(form, caption, name, value = "", maxLength = 1200) {
+  const label = document.createElement("label");
+  label.textContent = caption;
+  const textarea = document.createElement("textarea");
+  textarea.name = name;
+  textarea.value = value;
+  textarea.maxLength = maxLength;
+  textarea.rows = 3;
+  label.append(textarea);
+  form.append(label);
+  return textarea;
+}
+
+function appendSelectField(form, caption, name, selectedValue, choices) {
+  const label = document.createElement("label");
+  label.textContent = caption;
+  const select = document.createElement("select");
+  select.name = name;
+  for (const choice of choices) {
+    const option = document.createElement("option");
+    option.value = choice;
+    option.textContent = choice.replaceAll("_", " ");
+    option.selected = choice === selectedValue;
+    select.append(option);
+  }
+  label.append(select);
+  form.append(label);
+  return select;
+}
+
+function addCampaignSubmit(form, url, method, successMessage) {
+  const button = document.createElement("button");
+  button.type = "submit";
+  button.textContent = "Save";
+  form.append(button);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      await api(url, { method, body: JSON.stringify(formObject(form)) });
+      await loadWorkspace();
+      showNotice(successMessage);
+    } catch (error) { showNotice(error.message); }
+  });
 }
 
 function renderReviews(reviews, goals) {

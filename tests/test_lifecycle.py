@@ -453,7 +453,26 @@ def test_campaign_is_90_days_and_owned(client, test_user, db_session: Session) -
     assert created.status_code == 201, created.text
     campaign = created.json()
     assert campaign["status"] == "active"
+    assert len(campaign["arcs"]) == 13
+    assert campaign["arcs"][0]["starts_on"] == "2026-01-01"
+    assert campaign["arcs"][-1]["ends_on"] == "2026-03-31"
     assert len(client.get("/api/v1/campaigns").json()) == 1
+    updated = client.patch(
+        f"/api/v1/campaigns/{campaign['id']}",
+        json={
+            "title": "Q1 steady study",
+            "objective": "Build a sustainable study routine",
+            "scope_change_reason": "My available evenings changed.",
+        },
+    )
+    assert updated.status_code == 200
+    assert updated.json()["title"] == "Q1 steady study"
+    assert (
+        updated.json()["scope_changes"][0]["previous_objective"] == payload["objective"]
+    )
+    assert updated.json()["scope_changes"][0]["reason"] == (
+        "My available evenings changed."
+    )
 
     other_id = UUID("00000000-0000-0000-0000-000000000001")
     db_session.add(User(id=other_id, email="other@example.com", password_hash="unused"))
@@ -511,6 +530,74 @@ def test_campaign_is_90_days_and_owned(client, test_user, db_session: Session) -
         ).status_code
         == 404
     )
+
+
+def test_campaign_arcs_checkpoints_and_reflection_controls(client, test_user) -> None:
+    _login(client, test_user)
+    response = client.post(
+        "/api/v1/campaigns",
+        json={
+            "title": "Spring reset",
+            "objective": "Make time for recovery",
+            "starts_on": "2026-01-01",
+            "ends_on": "2026-03-31",
+        },
+    )
+    assert response.status_code == 201, response.text
+    campaign = response.json()
+    first_arc = campaign["arcs"][0]
+
+    arc_update = client.patch(
+        f"/api/v1/campaigns/{campaign['id']}/arcs/{first_arc['id']}",
+        json={
+            "title": "Protect the first week",
+            "focus": "Take one evening off",
+            "status": "active",
+        },
+    )
+    assert arc_update.status_code == 200, arc_update.text
+    assert arc_update.json()["arcs"][0]["focus"] == "Take one evening off"
+
+    outside_week = client.post(
+        f"/api/v1/campaigns/{campaign['id']}/arcs/{first_arc['id']}/checkpoints",
+        json={"title": "Outside its week", "due_on": "2026-01-08"},
+    )
+    assert outside_week.status_code == 422
+    created_checkpoint = client.post(
+        f"/api/v1/campaigns/{campaign['id']}/arcs/{first_arc['id']}/checkpoints",
+        json={"title": "Plan a quiet evening", "due_on": "2026-01-04"},
+    )
+    assert created_checkpoint.status_code == 201, created_checkpoint.text
+    checkpoint = created_checkpoint.json()["arcs"][0]["checkpoints"][0]
+    completed_checkpoint = client.patch(
+        f"/api/v1/campaigns/{campaign['id']}/checkpoints/{checkpoint['id']}",
+        json={"status": "completed"},
+    )
+    assert completed_checkpoint.status_code == 200
+    assert completed_checkpoint.json()["arcs"][0]["checkpoints"][0]["completed_at"]
+
+    retrospective_url = f"/api/v1/campaigns/{campaign['id']}/retrospective"
+    retrospective_payload = {
+        "wins": "I protected some time off.",
+        "blockers": "Work ran late twice.",
+        "learnings": "I need a smaller weekday plan.",
+        "next_focus": "Keep the weekend open.",
+    }
+    assert client.put(retrospective_url, json=retrospective_payload).status_code == 403
+    _record_reflection_consent(client)
+    saved = client.put(retrospective_url, json=retrospective_payload)
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["retrospective"]["wins"] == retrospective_payload["wins"]
+    assert client.put(retrospective_url, json={"wins": "   "}).status_code == 422
+
+    exported = client.get("/api/v1/export").json()["lifecycle_data"]["campaigns"][0]
+    assert exported["arcs"][0]["checkpoints"][0]["status"] == "completed"
+    assert (
+        exported["retrospective"]["next_focus"] == retrospective_payload["next_focus"]
+    )
+    deleted = client.delete(retrospective_url)
+    assert deleted.status_code == 200
+    assert deleted.json()["retrospective"] is None
 
 
 def test_review_responses_require_current_consent_and_export(client, test_user) -> None:

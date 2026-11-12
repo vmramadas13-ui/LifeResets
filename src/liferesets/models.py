@@ -722,8 +722,126 @@ class Campaign(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, nullable=False
     )
-
     user: Mapped[User] = relationship(back_populates="campaigns")
+    arcs: Mapped[list[CampaignArc]] = relationship(
+        back_populates="campaign",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="CampaignArc.week_number",
+    )
+    scope_changes: Mapped[list[CampaignScopeChange]] = relationship(
+        back_populates="campaign",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="CampaignScopeChange.recorded_at",
+    )
+    retrospective: Mapped[CampaignRetrospective | None] = relationship(
+        back_populates="campaign",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        uselist=False,
+    )
+
+
+class CampaignArc(Base):
+    """One dated weekly focus within a 90-day campaign."""
+
+    __tablename__ = "campaign_arcs"
+    __table_args__ = (
+        UniqueConstraint("campaign_id", "week_number", name="unique_campaign_week"),
+        CheckConstraint("week_number BETWEEN 1 AND 13", name="valid_campaign_week"),
+        CheckConstraint(
+            "status IN ('planned','active','completed','skipped')",
+            name="valid_campaign_arc_status",
+        ),
+        CheckConstraint("ends_on >= starts_on", name="valid_campaign_arc_dates"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    campaign_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("campaigns.id", ondelete="CASCADE"), index=True
+    )
+    week_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    focus: Mapped[str | None] = mapped_column(Text, nullable=True)
+    starts_on: Mapped[date] = mapped_column(Date, nullable=False)
+    ends_on: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(String(12), default="planned", nullable=False)
+
+    campaign: Mapped[Campaign] = relationship(back_populates="arcs")
+    checkpoints: Mapped[list[CampaignCheckpoint]] = relationship(
+        back_populates="arc",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="CampaignCheckpoint.due_on, CampaignCheckpoint.id",
+    )
+
+
+class CampaignCheckpoint(Base):
+    """A dated milestone attached to a weekly campaign arc."""
+
+    __tablename__ = "campaign_checkpoints"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending','completed','skipped')",
+            name="valid_campaign_checkpoint_status",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    arc_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("campaign_arcs.id", ondelete="CASCADE"), index=True
+    )
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    due_on: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(String(12), default="pending", nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    arc: Mapped[CampaignArc] = relationship(back_populates="checkpoints")
+
+
+class CampaignScopeChange(Base):
+    """An append-only record of a changed campaign objective."""
+
+    __tablename__ = "campaign_scope_changes"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    campaign_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("campaigns.id", ondelete="CASCADE"), index=True
+    )
+    previous_objective: Mapped[str] = mapped_column(Text, nullable=False)
+    new_objective: Mapped[str] = mapped_column(Text, nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+    campaign: Mapped[Campaign] = relationship(back_populates="scope_changes")
+
+
+class CampaignRetrospective(Base):
+    """An editable, consent-gated reflection at the end of a campaign."""
+
+    __tablename__ = "campaign_retrospectives"
+    __table_args__ = (
+        UniqueConstraint("campaign_id", name="unique_campaign_retrospective"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    campaign_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("campaigns.id", ondelete="CASCADE")
+    )
+    wins: Mapped[str | None] = mapped_column(Text, nullable=True)
+    blockers: Mapped[str | None] = mapped_column(Text, nullable=True)
+    learnings: Mapped[str | None] = mapped_column(Text, nullable=True)
+    next_focus: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+    campaign: Mapped[Campaign] = relationship(back_populates="retrospective")
 
 
 class Review(Base):

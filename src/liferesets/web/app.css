@@ -153,6 +153,20 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .record-list li:first-child { border-top: 0; }
 .record-list strong, .record-list small { display: block; }
 .record-list small { margin-top: 4px; color: var(--muted); }
+.campaign-card > p { margin: 10px 0 0; }
+.campaign-card > .campaign-workspace { margin-top: 14px; }
+.campaign-workspace h3 { margin: 20px 0 8px; font-size: 1.05rem; }
+.campaign-workspace h4 { margin: 16px 0 6px; }
+.campaign-workspace form { display: grid; gap: 10px; }
+.campaign-workspace form button { justify-self: start; }
+.campaign-arc { margin-top: 8px; padding: 8px 12px 12px; border: 1px solid var(--line); border-radius: 13px; }
+.campaign-arc > summary { font-size: .92rem; }
+.campaign-checkpoints, .campaign-scope-history { margin: 8px 0; padding-left: 22px; }
+.campaign-checkpoints > li, .campaign-scope-history > li { padding: 8px 0; border-top: 1px solid var(--line); }
+.campaign-scope-history p { margin: 0; overflow-wrap: anywhere; }
+.campaign-checkpoint-create { padding-top: 10px; border-top: 1px solid var(--line); }
+.campaign-retrospective { padding-bottom: 6px; }
+.campaign-retrospective > button { margin-top: 10px; }
 .quest-card { display: grid; gap: 10px; }
 .quest-card > progress { width: 100%; height: 15px; accent-color: var(--sky); }
 .quest-card > .quest-progress-label { margin-top: 0; }

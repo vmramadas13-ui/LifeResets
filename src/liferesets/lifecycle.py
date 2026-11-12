@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Literal
 from uuid import UUID
@@ -21,6 +21,10 @@ from liferesets.models import (
     AwakeningBaseline,
     AwakeningBaselineGoalLink,
     Campaign,
+    CampaignArc,
+    CampaignCheckpoint,
+    CampaignRetrospective,
+    CampaignScopeChange,
     ConsentRecord,
     Goal,
     OnboardingStep,
@@ -190,6 +194,14 @@ class CampaignCreate(BaseModel):
     starts_on: date
     ends_on: date
 
+    @field_validator("title", "objective")
+    @classmethod
+    def trim_required_text(cls, value: str) -> str:
+        trimmed = value.strip()
+        if not trimmed:
+            raise ValueError("This field cannot be blank")
+        return trimmed
+
     @model_validator(mode="after")
     def is_ninety_days(self) -> CampaignCreate:
         if (self.ends_on - self.starts_on).days != 89:
@@ -201,7 +213,92 @@ class CampaignCreate(BaseModel):
 
 class CampaignUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    status: CampaignStatus
+    title: str | None = Field(default=None, min_length=1, max_length=160)
+    objective: str | None = Field(default=None, min_length=1, max_length=2000)
+    status: CampaignStatus | None = None
+    scope_change_reason: str | None = Field(default=None, max_length=1200)
+
+    @field_validator("title", "objective")
+    @classmethod
+    def trim_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        trimmed = value.strip()
+        if not trimmed:
+            raise ValueError("This field cannot be blank")
+        return trimmed
+
+
+class CampaignArcUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: str | None = Field(default=None, min_length=1, max_length=160)
+    focus: str | None = Field(default=None, max_length=2000)
+    status: Literal["planned", "active", "completed", "skipped"] | None = None
+
+    @field_validator("title")
+    @classmethod
+    def trim_title(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        trimmed = value.strip()
+        if not trimmed:
+            raise ValueError("title cannot be blank")
+        return trimmed
+
+    @field_validator("focus")
+    @classmethod
+    def trim_focus(cls, value: str | None) -> str | None:
+        return value.strip() or None if value is not None else None
+
+
+class CampaignCheckpointCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: str = Field(min_length=1, max_length=160)
+    due_on: date
+
+    @field_validator("title")
+    @classmethod
+    def trim_title(cls, value: str) -> str:
+        trimmed = value.strip()
+        if not trimmed:
+            raise ValueError("title cannot be blank")
+        return trimmed
+
+
+class CampaignCheckpointUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: str | None = Field(default=None, min_length=1, max_length=160)
+    due_on: date | None = None
+    status: Literal["pending", "completed", "skipped"] | None = None
+
+    @field_validator("title")
+    @classmethod
+    def trim_title(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        trimmed = value.strip()
+        if not trimmed:
+            raise ValueError("title cannot be blank")
+        return trimmed
+
+
+class CampaignRetrospectiveInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    wins: str | None = Field(default=None, max_length=3000)
+    blockers: str | None = Field(default=None, max_length=3000)
+    learnings: str | None = Field(default=None, max_length=3000)
+    next_focus: str | None = Field(default=None, max_length=3000)
+
+    @field_validator("wins", "blockers", "learnings", "next_focus")
+    @classmethod
+    def trim_response(cls, value: str | None) -> str | None:
+        return value.strip() or None if value is not None else None
+
+    @model_validator(mode="after")
+    def has_response(self) -> CampaignRetrospectiveInput:
+        if not any((self.wins, self.blockers, self.learnings, self.next_focus)):
+            raise ValueError("Add at least one retrospective response")
+        return self
 
 
 class ReviewResponses(BaseModel):
@@ -283,6 +380,82 @@ def _baseline_payload(item: AwakeningBaseline) -> dict[str, object]:
         "goal_title": goal_link.goal.title if goal_link else None,
         "linked_at": goal_link.linked_at.isoformat() if goal_link else None,
     }
+
+
+def _campaign_payload(campaign: Campaign) -> dict[str, object]:
+    retrospective = campaign.retrospective
+    return {
+        "id": str(campaign.id),
+        "title": campaign.title,
+        "objective": campaign.objective,
+        "starts_on": campaign.starts_on.isoformat(),
+        "ends_on": campaign.ends_on.isoformat(),
+        "status": campaign.status,
+        "arcs": [
+            {
+                "id": str(arc.id),
+                "week_number": arc.week_number,
+                "title": arc.title,
+                "focus": arc.focus,
+                "starts_on": arc.starts_on.isoformat(),
+                "ends_on": arc.ends_on.isoformat(),
+                "status": arc.status,
+                "checkpoints": [
+                    {
+                        "id": str(checkpoint.id),
+                        "title": checkpoint.title,
+                        "due_on": checkpoint.due_on.isoformat(),
+                        "status": checkpoint.status,
+                        "completed_at": (
+                            checkpoint.completed_at.isoformat()
+                            if checkpoint.completed_at
+                            else None
+                        ),
+                    }
+                    for checkpoint in arc.checkpoints
+                ],
+            }
+            for arc in campaign.arcs
+        ],
+        "scope_changes": [
+            {
+                "id": str(change.id),
+                "previous_objective": change.previous_objective,
+                "new_objective": change.new_objective,
+                "reason": change.reason,
+                "recorded_at": change.recorded_at.isoformat(),
+            }
+            for change in campaign.scope_changes
+        ],
+        "retrospective": (
+            {
+                "wins": retrospective.wins,
+                "blockers": retrospective.blockers,
+                "learnings": retrospective.learnings,
+                "next_focus": retrospective.next_focus,
+                "updated_at": retrospective.updated_at.isoformat(),
+            }
+            if retrospective is not None
+            else None
+        ),
+    }
+
+
+def _campaign_query():
+    return select(Campaign).options(
+        selectinload(Campaign.arcs).selectinload(CampaignArc.checkpoints),
+        selectinload(Campaign.scope_changes),
+        selectinload(Campaign.retrospective),
+    )
+
+
+def _owned_campaign(db: Session, user_id: UUID, campaign_id: UUID) -> Campaign:
+    campaign = db.scalar(
+        _campaign_query().where(Campaign.id == campaign_id, Campaign.user_id == user_id)
+    )
+    if campaign is None:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    return campaign
 
 
 def _assessment_payload(item: AwakeningAssessment) -> dict[str, object]:
@@ -663,21 +836,11 @@ def list_campaigns(
     auth: Authenticated, db: Session = Depends(get_db)
 ) -> list[dict[str, object]]:
     campaigns = db.scalars(
-        select(Campaign)
+        _campaign_query()
         .where(Campaign.user_id == auth.user.id)
         .order_by(Campaign.starts_on.desc())
     ).all()
-    return [
-        {
-            "id": str(item.id),
-            "title": item.title,
-            "objective": item.objective,
-            "starts_on": item.starts_on.isoformat(),
-            "ends_on": item.ends_on.isoformat(),
-            "status": item.status,
-        }
-        for item in campaigns
-    ]
+    return [_campaign_payload(item) for item in campaigns]
 
 
 @router.post("/campaigns", status_code=201)
@@ -692,19 +855,25 @@ def create_campaign(
         objective=request.objective,
         starts_on=request.starts_on,
         ends_on=request.ends_on,
+        arcs=[
+            CampaignArc(
+                week_number=week_number,
+                title=f"Week {week_number}",
+                starts_on=request.starts_on + timedelta(days=(week_number - 1) * 7),
+                ends_on=min(
+                    request.starts_on + timedelta(days=week_number * 7 - 1),
+                    request.ends_on,
+                ),
+            )
+            for week_number in range(1, 14)
+        ],
     )
     db.add(campaign)
     _audit(db, auth.user, "campaign.created")
     db.commit()
     db.refresh(campaign)
-    return {
-        "id": str(campaign.id),
-        "title": campaign.title,
-        "objective": campaign.objective,
-        "starts_on": campaign.starts_on.isoformat(),
-        "ends_on": campaign.ends_on.isoformat(),
-        "status": campaign.status,
-    }
+    campaign = _owned_campaign(db, auth.user.id, campaign.id)
+    return _campaign_payload(campaign)
 
 
 @router.patch("/campaigns/{campaign_id}")
@@ -714,17 +883,154 @@ def update_campaign(
     auth: AuthenticatedWithCsrf,
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
-    campaign = db.scalar(
-        select(Campaign).where(
-            Campaign.id == campaign_id, Campaign.user_id == auth.user.id
+    campaign = _owned_campaign(db, auth.user.id, campaign_id)
+    previous_objective = campaign.objective
+    if changes.title is not None:
+        campaign.title = changes.title
+    if changes.objective is not None:
+        campaign.objective = changes.objective
+    if changes.status is not None:
+        campaign.status = changes.status
+    if changes.objective is not None and changes.objective != previous_objective:
+        campaign.scope_changes.append(
+            CampaignScopeChange(
+                previous_objective=previous_objective,
+                new_objective=changes.objective,
+                reason=changes.scope_change_reason,
+            )
         )
-    )
-    if campaign is None:
-        raise HTTPException(status_code=404, detail="Campaign not found")
-    campaign.status = changes.status
     _audit(db, auth.user, "campaign.updated")
     db.commit()
-    return {"id": str(campaign.id), "status": campaign.status}
+    return _campaign_payload(campaign)
+
+
+@router.patch("/campaigns/{campaign_id}/arcs/{arc_id}")
+def update_campaign_arc(
+    campaign_id: UUID,
+    arc_id: UUID,
+    changes: CampaignArcUpdate,
+    auth: AuthenticatedWithCsrf,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    campaign = _owned_campaign(db, auth.user.id, campaign_id)
+    arc = next((item for item in campaign.arcs if item.id == arc_id), None)
+    if arc is None:
+        raise HTTPException(status_code=404, detail="Campaign week not found")
+    for field in changes.model_fields_set:
+        value = getattr(changes, field)
+        if field == "title" and value is None:
+            raise HTTPException(status_code=422, detail="title cannot be empty")
+        if field == "status" and value is None:
+            raise HTTPException(status_code=422, detail="status cannot be empty")
+        setattr(arc, field, value)
+    _audit(db, auth.user, "campaign.arc.updated")
+    db.commit()
+    return _campaign_payload(campaign)
+
+
+@router.post("/campaigns/{campaign_id}/arcs/{arc_id}/checkpoints", status_code=201)
+def create_campaign_checkpoint(
+    campaign_id: UUID,
+    arc_id: UUID,
+    request: CampaignCheckpointCreate,
+    auth: AuthenticatedWithCsrf,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    campaign = _owned_campaign(db, auth.user.id, campaign_id)
+    arc = next((item for item in campaign.arcs if item.id == arc_id), None)
+    if arc is None:
+        raise HTTPException(status_code=404, detail="Campaign week not found")
+    if not arc.starts_on <= request.due_on <= arc.ends_on:
+        raise HTTPException(
+            status_code=422,
+            detail="A checkpoint must fall within its campaign week",
+        )
+    arc.checkpoints.append(
+        CampaignCheckpoint(title=request.title, due_on=request.due_on)
+    )
+    _audit(db, auth.user, "campaign.checkpoint.created")
+    db.commit()
+    return _campaign_payload(campaign)
+
+
+@router.patch("/campaigns/{campaign_id}/checkpoints/{checkpoint_id}")
+def update_campaign_checkpoint(
+    campaign_id: UUID,
+    checkpoint_id: UUID,
+    changes: CampaignCheckpointUpdate,
+    auth: AuthenticatedWithCsrf,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    campaign = _owned_campaign(db, auth.user.id, campaign_id)
+    checkpoint = next(
+        (
+            checkpoint
+            for arc in campaign.arcs
+            for checkpoint in arc.checkpoints
+            if checkpoint.id == checkpoint_id
+        ),
+        None,
+    )
+    if checkpoint is None:
+        raise HTTPException(status_code=404, detail="Campaign checkpoint not found")
+    arc = next(arc for arc in campaign.arcs if checkpoint in arc.checkpoints)
+    if changes.title is not None:
+        checkpoint.title = changes.title
+    if changes.due_on is not None:
+        if not arc.starts_on <= changes.due_on <= arc.ends_on:
+            raise HTTPException(
+                status_code=422,
+                detail="A checkpoint must fall within its campaign week",
+            )
+        checkpoint.due_on = changes.due_on
+    if changes.status is not None:
+        checkpoint.status = changes.status
+        checkpoint.completed_at = (
+            datetime.now(UTC) if changes.status == "completed" else None
+        )
+    _audit(db, auth.user, "campaign.checkpoint.updated")
+    db.commit()
+    return _campaign_payload(campaign)
+
+
+@router.put("/campaigns/{campaign_id}/retrospective")
+def save_campaign_retrospective(
+    campaign_id: UUID,
+    request: CampaignRetrospectiveInput,
+    auth: AuthenticatedWithCsrf,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    campaign = _owned_campaign(db, auth.user.id, campaign_id)
+    if not _consent_active(db, auth.user.id, "reflection_storage"):
+        raise HTTPException(
+            status_code=403,
+            detail="Grant reflection_storage consent before saving a retrospective.",
+        )
+    retrospective = campaign.retrospective
+    if retrospective is None:
+        retrospective = CampaignRetrospective(campaign_id=campaign.id)
+        campaign.retrospective = retrospective
+    retrospective.wins = request.wins
+    retrospective.blockers = request.blockers
+    retrospective.learnings = request.learnings
+    retrospective.next_focus = request.next_focus
+    _audit(db, auth.user, "campaign.retrospective.saved")
+    db.commit()
+    return _campaign_payload(campaign)
+
+
+@router.delete("/campaigns/{campaign_id}/retrospective")
+def delete_campaign_retrospective(
+    campaign_id: UUID,
+    auth: AuthenticatedWithCsrf,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    campaign = _owned_campaign(db, auth.user.id, campaign_id)
+    if campaign.retrospective is not None:
+        db.delete(campaign.retrospective)
+        _audit(db, auth.user, "campaign.retrospective.deleted")
+        db.commit()
+    return {"id": str(campaign.id), "retrospective": None}
 
 
 @router.get("/reviews")
@@ -937,7 +1243,7 @@ def export_lifecycle_data(
     db: Session, user_id: UUID
 ) -> dict[str, list[dict[str, object]]]:
     """Export account-owned onboarding answers, campaigns, and reviews."""
-    campaigns = db.scalars(select(Campaign).where(Campaign.user_id == user_id)).all()
+    campaigns = db.scalars(_campaign_query().where(Campaign.user_id == user_id)).all()
     steps = db.scalars(
         select(OnboardingStep).where(OnboardingStep.user_id == user_id)
     ).all()
@@ -962,17 +1268,7 @@ def export_lifecycle_data(
         .order_by(AwakeningBaseline.recorded_at, AwakeningBaseline.id)
     ).all()
     return {
-        "campaigns": [
-            {
-                "id": str(item.id),
-                "title": item.title,
-                "objective": item.objective,
-                "starts_on": item.starts_on.isoformat(),
-                "ends_on": item.ends_on.isoformat(),
-                "status": item.status,
-            }
-            for item in campaigns
-        ],
+        "campaigns": [_campaign_payload(item) for item in campaigns],
         "onboarding_steps": [
             {
                 "step": item.step_number,

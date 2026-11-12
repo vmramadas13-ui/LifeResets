@@ -58,6 +58,9 @@ def test_web_shell_and_pwa_files_are_served() -> None:
         assert "Add to today" in app_script.text
         assert 'editSummary.textContent = "Edit quest"' in app_script.text
         assert "Save quest changes" in app_script.text
+        assert 'textContent = "Open 90-day plan"' in app_script.text
+        assert 'textContent = "Weekly arcs"' in app_script.text
+        assert 'textContent = "Campaign retrospective"' in app_script.text
         assert "unit is locked to keep its history accurate" in app_script.text
         assert "Dated history remains unchanged." in app_script.text
         assert "Turn next step into a task" in app_script.text
@@ -76,6 +79,7 @@ def test_web_shell_and_pwa_files_are_served() -> None:
         assert 'id="awakening-baseline-panel"' in page.text
         assert 'id="domain-subareas"' in page.text
         assert 'id="goal-subarea"' in page.text
+        assert 'id="campaign-form"' in page.text
         assert 'id="awakening-baseline-consent"' in page.text
         assert 'id="awakening-baseline-form"' in page.text
         assert (
@@ -94,7 +98,7 @@ def test_web_shell_and_pwa_files_are_served() -> None:
         assert client.get("/static/app-icon-512.png").status_code == 200
         worker = client.get("/sw.js")
         assert worker.status_code == 200
-        assert 'const CACHE = "liferesets-shell-v4"' in worker.text
+        assert 'const CACHE = "liferesets-shell-v5"' in worker.text
         assert worker.headers["service-worker-allowed"] == "/"
         assert 'url.pathname.startsWith("/api/")' in worker.text
         assert client.get("/static/app.js").status_code == 200

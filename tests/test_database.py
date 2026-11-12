@@ -1,5 +1,5 @@
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from alembic import command
@@ -38,7 +38,7 @@ def test_migration_upgrade_and_rollback(tmp_path: Path, monkeypatch) -> None:
             revision = connection.execute(
                 text("SELECT version_num FROM alembic_version")
             ).scalar_one()
-        assert revision == "42d916f7bca0"
+        assert revision == "61c3de09f127"
         assert {
             "users",
             "profiles",
@@ -71,6 +71,10 @@ def test_migration_upgrade_and_rollback(tmp_path: Path, monkeypatch) -> None:
             "task_reschedule_events",
             "quests",
             "quest_steps",
+            "campaign_arcs",
+            "campaign_checkpoints",
+            "campaign_scope_changes",
+            "campaign_retrospectives",
         }.issubset(inspect(engine).get_table_names())
         assert "answer" in {
             column["name"] for column in inspect(engine).get_columns("onboarding_steps")
@@ -125,12 +129,69 @@ def test_migration_upgrade_and_rollback(tmp_path: Path, monkeypatch) -> None:
             "task_reschedule_events",
             "quests",
             "quest_steps",
+            "campaign_arcs",
+            "campaign_checkpoints",
+            "campaign_scope_changes",
+            "campaign_retrospectives",
         }.intersection(inspect(engine).get_table_names())
         with engine.connect() as connection:
             revision = connection.execute(
                 text("SELECT version_num FROM alembic_version")
             ).first()
         assert revision is None
+    finally:
+        engine.dispose()
+        get_settings.cache_clear()
+
+
+def test_campaign_migration_backfills_weekly_arcs(tmp_path: Path, monkeypatch) -> None:
+    database_url = f"sqlite:///{tmp_path / 'campaign-backfill.db'}"
+    monkeypatch.setenv("LIFERESETS_DATABASE_URL", database_url)
+    get_settings.cache_clear()
+    config = Config(str(ROOT / "alembic.ini"))
+    engine = create_engine(database_url)
+    user_id = uuid.uuid4()
+    campaign_id = uuid.uuid4()
+    created_at = datetime.now(UTC)
+
+    try:
+        command.upgrade(config, "42d916f7bca0")
+        metadata = MetaData()
+        users = Table("users", metadata, autoload_with=engine)
+        campaigns = Table("campaigns", metadata, autoload_with=engine)
+        with engine.begin() as connection:
+            connection.execute(
+                insert(users).values(
+                    id=user_id.hex,
+                    email="campaign-backfill@example.com",
+                    password_hash="unused",
+                    is_active=True,
+                    created_at=created_at,
+                )
+            )
+            connection.execute(
+                insert(campaigns).values(
+                    id=campaign_id.hex,
+                    user_id=user_id.hex,
+                    title="Existing campaign",
+                    objective="Keep the original plan",
+                    starts_on=date(2026, 1, 1),
+                    ends_on=date(2026, 3, 31),
+                    status="active",
+                    created_at=created_at,
+                )
+            )
+        command.upgrade(config, "head")
+        arcs = Table("campaign_arcs", MetaData(), autoload_with=engine)
+        with engine.connect() as connection:
+            rows = connection.execute(
+                select(arcs)
+                .where(arcs.c.campaign_id == campaign_id.hex)
+                .order_by(arcs.c.week_number)
+            ).all()
+        assert len(rows) == 13
+        assert rows[0].starts_on.isoformat() == "2026-01-01"
+        assert rows[-1].ends_on.isoformat() == "2026-03-31"
     finally:
         engine.dispose()
         get_settings.cache_clear()
