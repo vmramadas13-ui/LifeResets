@@ -34,6 +34,7 @@ def test_web_shell_and_pwa_files_are_served() -> None:
         assert 'id="domain-settings"' in page.text
         assert 'id="habits-section"' in page.text
         assert 'id="habit-form"' in page.text
+        assert 'id="habit-builder-preview"' in page.text
         assert 'id="habit-frequency"' in page.text
         assert 'id="habit-weekdays-field"' in page.text
         assert 'name="interval_days"' in page.text
@@ -47,6 +48,8 @@ def test_web_shell_and_pwa_files_are_served() -> None:
         assert 'method: "PATCH"' in app_script.text
         assert "suggested ${planItem.suggested_start}" in app_script.text
         assert "leave busy times clear" in app_script.text
+        assert "Reschedule history ·" in app_script.text
+        assert "updateHabitBuilderPreview" in app_script.text
         assert "unit is locked to keep its history accurate" in app_script.text
         assert "Dated history remains unchanged." in app_script.text
         assert "Turn next step into a task" in app_script.text

@@ -51,10 +51,11 @@
           <p class="hint">Record what happened at your pace. Skips are part of the record; there are no streak penalties.</p>
           <ul id="habits" class="record-list" aria-live="polite"></ul>
           <details><summary>Add a routine</summary>
+            <p class="habit-builder-guide">Start with a cue you already notice, choose a small action, and decide what makes restarting easy after a missed day.</p><p id="habit-builder-preview" class="habit-builder-preview" role="status" aria-live="polite"></p>
             <form id="habit-form">
-              <label>Connected goal (optional)<select name="goal_id" id="habit-goal"><option value="">No goal linked</option></select></label>
-              <label>Cue<input name="cue" maxlength="160" placeholder="After breakfast" required></label>
-              <label>Action<input name="action" maxlength="240" placeholder="Review one lesson" required></label>
+              <label>Connected goal (optional)<select name="goal_id" id="habit-goal"><option value="">No goal linked</option></select><span class="field-hint">Choose a goal only if this routine supports it.</span></label>
+              <label>What existing moment will be your cue?<input name="cue" maxlength="160" placeholder="After breakfast" required><span class="field-hint">Attach the routine to something that already happens.</span></label>
+              <label>What small action will you take?<input name="action" maxlength="240" placeholder="Review one lesson" required><span class="field-hint">Choose one clear action you can repeat.</span></label>
               <label>Frequency<select name="frequency" id="habit-frequency"><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="custom">Custom</option></select></label>
               <div id="habit-weekdays-field" hidden><p class="field-hint">Choose specific days, or leave them blank to make this due once on any day each week.</p><div class="habit-weekdays"><label class="check-row"><input name="weekdays" type="checkbox" value="1"><span>Mon</span></label><label class="check-row"><input name="weekdays" type="checkbox" value="2"><span>Tue</span></label><label class="check-row"><input name="weekdays" type="checkbox" value="3"><span>Wed</span></label><label class="check-row"><input name="weekdays" type="checkbox" value="4"><span>Thu</span></label><label class="check-row"><input name="weekdays" type="checkbox" value="5"><span>Fri</span></label><label class="check-row"><input name="weekdays" type="checkbox" value="6"><span>Sat</span></label><label class="check-row"><input name="weekdays" type="checkbox" value="7"><span>Sun</span></label></div></div>
               <label id="habit-custom-schedule-field" hidden>Repeat every N days<input name="interval_days" type="number" min="1" max="365" value="3" inputmode="numeric"></label>
@@ -62,8 +63,8 @@
               <label>End date (optional)<input name="end_date" type="date"></label>
               <label>Reminder preference<select name="reminder_preference"><option value="none">No reminder</option><option value="in_app">Show an in-app reminder when due</option></select></label>
               <p class="field-hint">Reminders appear inside LifeResets only. Push and email reminders are not connected.</p>
-              <label>Minimum version<input name="minimum_version" maxlength="240" placeholder="Review one note" required></label>
-              <label>Gentle restart action<input name="recovery_action" maxlength="240" placeholder="Restart with one note" required></label>
+              <label>What is the easiest useful version?<input name="minimum_version" maxlength="240" placeholder="Review one note" required><span class="field-hint">Make it small enough for a low-energy day.</span></label>
+              <label>How would you like to restart after a miss?<input name="recovery_action" maxlength="240" placeholder="Restart with one note" required><span class="field-hint">A missed day creates no penalty or catch-up debt.</span></label>
               <button type="submit">Save routine</button>
             </form>
           </details>

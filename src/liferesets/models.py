@@ -369,6 +369,28 @@ class Task(Base):
     daily_plan_items: Mapped[list[DailyPlanItem]] = relationship(
         back_populates="task", cascade="all, delete-orphan", passive_deletes=True
     )
+    reschedule_events: Mapped[list[TaskRescheduleEvent]] = relationship(
+        back_populates="task", cascade="all, delete-orphan", passive_deletes=True
+    )
+
+
+class TaskRescheduleEvent(Base):
+    """An append-only record of a task's user-selected deferral."""
+
+    __tablename__ = "task_reschedule_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    task_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("tasks.id", ondelete="CASCADE"), index=True
+    )
+    plan_date: Mapped[date] = mapped_column(Date, nullable=False)
+    previous_due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    defer_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+    task: Mapped[Task] = relationship(back_populates="reschedule_events")
 
 
 class Habit(Base):

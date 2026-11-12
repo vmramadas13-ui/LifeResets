@@ -974,6 +974,25 @@ function renderDailyPlan(plan) {
       : planItem.status === "planned" ? " · no open time slot fits" : "";
     meta.textContent = `${planItem.planned_minutes} min · ${statusLabels[planItem.status] || planItem.status}${suggestedTime}${planItem.deferred_to ? ` · ${planItem.deferred_to}` : ""}${originalDue}`;
     copy.append(title, meta);
+    if (planItem.reschedule_history?.length) {
+      const history = document.createElement("details");
+      const summary = document.createElement("summary");
+      summary.textContent = `Reschedule history · ${planItem.reschedule_history.length}`;
+      const entries = document.createElement("ol");
+      for (const event of planItem.reschedule_history) {
+        const entry = document.createElement("li");
+        const prior = event.previous_due_date
+          ? `previously due ${event.previous_due_date}`
+          : "no previous due date";
+        const next = event.defer_to
+          ? `deferred to ${event.defer_to}`
+          : "deferred without a new due date";
+        entry.textContent = `${event.plan_date} · ${prior} · ${next}`;
+        entries.append(entry);
+      }
+      history.append(summary, entries);
+      copy.append(history);
+    }
     item.append(copy);
     if (["planned", "deferred"].includes(planItem.status)) {
       const actions = document.createElement("div");
@@ -1702,9 +1721,19 @@ function updateHabitScheduleFields() {
   interval.required = custom;
 }
 
+function updateHabitBuilderPreview() {
+  const form = $("#habit-form");
+  const value = (name, fallback) => form.elements[name].value.trim() || fallback;
+  $("#habit-builder-preview").textContent = `After ${value("cue", "a moment you already notice")}, you can ${value("action", "take one small action")}. Your easiest version: ${value("minimum_version", "a tiny useful step")}. If you miss a day, you can ${value("recovery_action", "begin again with a small step")}.`;
+}
+
 $("#habit-frequency").addEventListener("change", updateHabitScheduleFields);
 $("#habit-start-date").value = localDateString();
 updateHabitScheduleFields();
+for (const name of ["cue", "action", "minimum_version", "recovery_action"]) {
+  $("#habit-form").elements[name].addEventListener("input", updateHabitBuilderPreview);
+}
+updateHabitBuilderPreview();
 
 $("#habit-form").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -1728,6 +1757,7 @@ $("#habit-form").addEventListener("submit", async (event) => {
     form.reset();
     $("#habit-start-date").value = localDateString();
     updateHabitScheduleFields();
+    updateHabitBuilderPreview();
     await loadWorkspace();
     showNotice("Routine saved. You can check in without keeping a streak.");
   } catch (error) {

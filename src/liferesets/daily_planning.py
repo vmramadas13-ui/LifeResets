@@ -18,6 +18,7 @@ from liferesets.models import (
     DailyPlanBusyWindow,
     DailyPlanItem,
     Task,
+    TaskRescheduleEvent,
     User,
 )
 from liferesets.progression import record_task_transition
@@ -126,6 +127,23 @@ def _item_payload(item: DailyPlanItem) -> dict[str, object]:
         else None,
         "deferred_to": item.deferred_to.isoformat() if item.deferred_to else None,
         "completed_at": item.completed_at.isoformat() if item.completed_at else None,
+        "reschedule_history": [
+            {
+                "plan_date": event.plan_date.isoformat(),
+                "previous_due_date": (
+                    event.previous_due_date.isoformat()
+                    if event.previous_due_date
+                    else None
+                ),
+                "defer_to": event.defer_to.isoformat() if event.defer_to else None,
+                "recorded_at": event.recorded_at.isoformat(),
+            }
+            for event in sorted(
+                item.task.reschedule_events,
+                key=lambda event: (event.recorded_at, str(event.id)),
+                reverse=True,
+            )
+        ],
     }
 
 
@@ -210,7 +228,9 @@ def get_daily_plan(
         select(DailyPlan)
         .where(DailyPlan.user_id == auth.user.id, DailyPlan.plan_date == plan_date)
         .options(
-            selectinload(DailyPlan.items).selectinload(DailyPlanItem.task),
+            selectinload(DailyPlan.items)
+            .selectinload(DailyPlanItem.task)
+            .selectinload(Task.reschedule_events),
             selectinload(DailyPlan.busy_windows),
         )
     )
@@ -242,7 +262,9 @@ def save_daily_plan(
         select(DailyPlan)
         .where(DailyPlan.user_id == auth.user.id, DailyPlan.plan_date == plan_date)
         .options(
-            selectinload(DailyPlan.items).selectinload(DailyPlanItem.task),
+            selectinload(DailyPlan.items)
+            .selectinload(DailyPlanItem.task)
+            .selectinload(Task.reschedule_events),
             selectinload(DailyPlan.busy_windows),
         )
     )
@@ -359,7 +381,9 @@ def save_daily_plan(
         select(DailyPlan)
         .where(DailyPlan.id == plan.id, DailyPlan.user_id == auth.user.id)
         .options(
-            selectinload(DailyPlan.items).selectinload(DailyPlanItem.task),
+            selectinload(DailyPlan.items)
+            .selectinload(DailyPlanItem.task)
+            .selectinload(Task.reschedule_events),
             selectinload(DailyPlan.busy_windows),
         )
     )
@@ -423,6 +447,14 @@ def update_daily_plan_item(
             raise HTTPException(
                 status_code=422, detail="defer_to must be after the plan date."
             )
+        db.add(
+            TaskRescheduleEvent(
+                task=item.task,
+                plan_date=plan.plan_date,
+                previous_due_date=item.task.due_date,
+                defer_to=changes.defer_to,
+            )
+        )
         item.status = "deferred"
         item.deferred_to = changes.defer_to
         if changes.defer_to is not None:
@@ -517,7 +549,9 @@ def export_daily_plans(db: Session, user_id: UUID) -> list[dict[str, object]]:
         select(DailyPlan)
         .where(DailyPlan.user_id == user_id)
         .options(
-            selectinload(DailyPlan.items).selectinload(DailyPlanItem.task),
+            selectinload(DailyPlan.items)
+            .selectinload(DailyPlanItem.task)
+            .selectinload(Task.reschedule_events),
             selectinload(DailyPlan.busy_windows),
         )
         .order_by(DailyPlan.plan_date)

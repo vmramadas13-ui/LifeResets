@@ -317,6 +317,12 @@ def test_recovery_is_a_preview_and_never_carries_tasks_forward_automatically(
         json={"status": "deferred", "defer_to": "2026-11-13"},
     )
     assert moved.status_code == 200, moved.text
+    move_history = moved.json()["reschedule_history"]
+    assert len(move_history) == 1
+    assert move_history[0]["plan_date"] == "2026-11-09"
+    assert move_history[0]["previous_due_date"] == "2026-11-10"
+    assert move_history[0]["defer_to"] == "2026-11-13"
+    assert move_history[0]["recorded_at"]
 
     # A more recent plan for the same task appears once, with its latest source date.
     second = client.put(
@@ -356,6 +362,14 @@ def test_recovery_is_a_preview_and_never_carries_tasks_forward_automatically(
         },
     )
     assert chosen.status_code == 200, chosen.text
+    history_export = client.get("/api/v1/export").json()["daily_plans"]
+    source_plan = next(
+        item for item in history_export if item["plan_date"] == "2026-11-09"
+    )
+    source_task = next(
+        item for item in source_plan["items"] if item["task_id"] == deferred_task["id"]
+    )
+    assert source_task["reschedule_history"][0]["defer_to"] == "2026-11-13"
     refreshed = client.get("/api/v1/daily-plans/2026-11-11/recovery").json()
     assert refreshed["items"] == []
 
