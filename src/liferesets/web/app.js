@@ -2,6 +2,7 @@ const $ = (selector) => document.querySelector(selector);
 const notice = $("#notice");
 let workspaceTasks = [];
 let workspaceDomains = [];
+let workspaceGoals = [];
 let dailyPlan = null;
 let workspaceProgress = null;
 let coreReply = "";
@@ -337,6 +338,19 @@ function renderGoals(goals) {
     const meta = document.createElement("small");
     meta.textContent = `${domain?.name || goal.domain.replaceAll("_", " ")} · ${goal.status}${goal.target_date ? ` · target ${goal.target_date}` : ""}`;
     item.append(title, meta);
+    if (goal.starting_points?.length) {
+      const startingPoints = document.createElement("ul");
+      startingPoints.className = "goal-starting-points";
+      for (const point of goal.starting_points) {
+        const entry = document.createElement("li");
+        const value = point.status === "unknown"
+          ? "Unknown"
+          : `${point.value} ${point.unit}`;
+        entry.textContent = `Starting point · ${point.metric_name}: ${value}`;
+        startingPoints.append(entry);
+      }
+      item.append(startingPoints);
+    }
     if (goal.metrics.length) {
       const metrics = document.createElement("ul");
       metrics.className = "goal-metrics";
@@ -583,6 +597,7 @@ async function loadWorkspace() {
   reflectionStorageConsent = Boolean(latestReflectionConsent?.granted);
   $("#reflection-consent").checked = reflectionStorageConsent;
   workspaceDomains = domains;
+  workspaceGoals = goals;
   renderDomainSettings(domains);
   const activeDomains = domains.filter((domain) => domain.enabled);
   const domainSelect = $("#goal-form select");
@@ -909,12 +924,91 @@ function renderAwakeningBaselines(awakening, step) {
       const meta = document.createElement("small");
       const measured = record.measured_on ? `Measured ${record.measured_on}` : "Measurement date not provided";
       meta.textContent = `${measured} · ${record.confidence}% confidence · entered ${new Date(record.recorded_at).toLocaleDateString()}`;
+      entry.append(summary, meta);
+      if (record.goal_id) {
+        const goalLink = document.createElement("small");
+        goalLink.textContent = `Linked to goal: ${record.goal_title || "Active goal"}`;
+        entry.append(goalLink);
+        const unlink = document.createElement("button");
+        unlink.type = "button";
+        unlink.className = "text-button";
+        unlink.textContent = "Unlink from goal";
+        unlink.addEventListener("click", async () => {
+          const stepIndex = awakeningStepIndex;
+          try {
+            await api(`/api/v1/onboarding/awakening/baselines/${record.id}/goal-link`, {
+              method: "DELETE",
+            });
+            await loadWorkspace();
+            renderAwakening(awakeningData, stepIndex);
+            showNotice("Starting point unlinked. Both records are kept.");
+          } catch (error) {
+            showNotice(error.message);
+          }
+        });
+        entry.append(unlink);
+      } else {
+        const linkDetails = document.createElement("details");
+        const linkSummary = document.createElement("summary");
+        linkSummary.textContent = "Link to an active goal";
+        linkDetails.append(linkSummary);
+        const candidates = workspaceGoals.filter(
+          (goal) => goal.status === "active" && goal.domain === domain.code,
+        );
+        if (!candidates.length) {
+          const noGoals = document.createElement("small");
+          noGoals.textContent = "Create an active goal in this life area before linking this starting point.";
+          linkDetails.append(noGoals);
+        } else {
+          const goalLabel = document.createElement("label");
+          goalLabel.textContent = `Choose an active ${domain.name} goal`;
+          const goalSelect = document.createElement("select");
+          goalSelect.append(new Option("Choose a goal", ""));
+          candidates.forEach((goal) => goalSelect.append(new Option(goal.title, goal.id)));
+          goalLabel.append(goalSelect);
+          const linkButton = document.createElement("button");
+          linkButton.type = "button";
+          linkButton.textContent = "Link starting point";
+          linkButton.disabled = !awakening.baseline_storage_consent;
+          linkButton.addEventListener("click", async () => {
+            if (!goalSelect.value) {
+              goalSelect.focus();
+              showNotice("Choose a goal in this life area first.");
+              return;
+            }
+            const stepIndex = awakeningStepIndex;
+            linkButton.disabled = true;
+            try {
+              await api(`/api/v1/onboarding/awakening/baselines/${record.id}/goal-link`, {
+                method: "POST",
+                body: JSON.stringify({ goal_id: goalSelect.value }),
+              });
+              await loadWorkspace();
+              renderAwakening(awakeningData, stepIndex);
+              showNotice("Starting point linked to the selected goal. No target or score was created.");
+            } catch (error) {
+              linkButton.disabled = false;
+              showNotice(error.message);
+            }
+          });
+          linkDetails.append(goalLabel, linkButton);
+        }
+        if (!awakening.baseline_storage_consent) {
+          const consentHint = document.createElement("small");
+          consentHint.textContent = "Grant starting-point storage permission to create a link.";
+          linkDetails.append(consentHint);
+        }
+        entry.append(linkDetails);
+      }
       const remove = document.createElement("button");
       remove.type = "button";
       remove.className = "text-button";
       remove.textContent = "Delete entry";
       remove.addEventListener("click", async () => {
-        if (!window.confirm("Delete this starting point from your history? This cannot be undone.")) return;
+        const confirmText = record.goal_id
+          ? `Delete this starting point and unlink it from ${record.goal_title || "its goal"}? This cannot be undone.`
+          : "Delete this starting point from your history? This cannot be undone.";
+        if (!window.confirm(confirmText)) return;
         const stepIndex = awakeningStepIndex;
         try {
           await api(`/api/v1/onboarding/awakening/baselines/${record.id}`, { method: "DELETE" });
@@ -925,7 +1019,7 @@ function renderAwakeningBaselines(awakening, step) {
           showNotice(error.message);
         }
       });
-      entry.append(summary, meta, remove);
+      entry.append(remove);
       history.append(entry);
     }
     if (domainRecords.length) item.append(history);

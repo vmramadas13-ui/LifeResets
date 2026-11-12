@@ -213,6 +213,129 @@ def test_awakening_baselines_are_consent_gated_explicit_and_append_only(
     assert len(client.get("/api/v1/onboarding/awakening").json()["baselines"]) == 2
 
 
+def test_awakening_starting_points_link_to_goals_only_by_user_choice(
+    client, test_user
+) -> None:
+    _login(client, test_user)
+    _record_baseline_consent(client)
+    baseline = client.post(
+        "/api/v1/onboarding/awakening/baselines",
+        json={
+            "domain": "learning",
+            "metric_name": "Weekly study time",
+            "status": "recorded",
+            "value": 4,
+            "unit": "hours",
+            "confidence": 80,
+        },
+    ).json()
+    goal = client.post(
+        "/api/v1/goals", json={"domain": "learning", "title": "Study"}
+    ).json()
+    another_goal = client.post(
+        "/api/v1/goals", json={"domain": "learning", "title": "Read more"}
+    ).json()
+    other_area_goal = client.post(
+        "/api/v1/goals", json={"domain": "finance", "title": "Save"}
+    ).json()
+
+    wrong_area = client.post(
+        f"/api/v1/onboarding/awakening/baselines/{baseline['id']}/goal-link",
+        json={"goal_id": other_area_goal["id"]},
+    )
+    assert wrong_area.status_code == 422
+
+    linked = client.post(
+        f"/api/v1/onboarding/awakening/baselines/{baseline['id']}/goal-link",
+        json={"goal_id": goal["id"]},
+    )
+    assert linked.status_code == 200, linked.text
+    assert linked.json()["created"] is True
+    assert linked.json()["baseline"]["goal_title"] == "Study"
+    goal_after_link = next(
+        item for item in client.get("/api/v1/goals").json() if item["id"] == goal["id"]
+    )
+    assert goal_after_link["metrics"] == []
+    assert goal_after_link["starting_points"][0]["id"] == baseline["id"]
+    assert goal_after_link["starting_points"][0]["value"] == "4.0000"
+    assert len(client.get("/api/v1/goals").json()) == 3
+    exported = client.get("/api/v1/export").json()["lifecycle_data"][
+        "awakening_baselines"
+    ]
+    linked_export = next(item for item in exported if item["id"] == baseline["id"])
+    assert linked_export["goal_id"] == goal["id"]
+
+    repeated = client.post(
+        f"/api/v1/onboarding/awakening/baselines/{baseline['id']}/goal-link",
+        json={"goal_id": goal["id"]},
+    )
+    assert repeated.status_code == 200
+    assert repeated.json()["created"] is False
+    conflicting = client.post(
+        f"/api/v1/onboarding/awakening/baselines/{baseline['id']}/goal-link",
+        json={"goal_id": another_goal["id"]},
+    )
+    assert conflicting.status_code == 409
+
+    unlinked = client.delete(
+        f"/api/v1/onboarding/awakening/baselines/{baseline['id']}/goal-link"
+    )
+    assert unlinked.status_code == 200
+    assert unlinked.json() == {"unlinked": True}
+    retained = next(
+        item
+        for item in client.get("/api/v1/onboarding/awakening").json()["baselines"]
+        if item["id"] == baseline["id"]
+    )
+    assert retained["goal_id"] is None
+
+    client.post(
+        f"/api/v1/onboarding/awakening/baselines/{baseline['id']}/goal-link",
+        json={"goal_id": goal["id"]},
+    )
+    client.delete(f"/api/v1/onboarding/awakening/baselines/{baseline['id']}")
+    remaining_goal = next(
+        item for item in client.get("/api/v1/goals").json() if item["id"] == goal["id"]
+    )
+    assert remaining_goal["starting_points"] == []
+
+    second_baseline = client.post(
+        "/api/v1/onboarding/awakening/baselines",
+        json={
+            "domain": "learning",
+            "metric_name": "Practice sessions",
+            "status": "unknown",
+        },
+    ).json()
+    unknown_link = client.post(
+        f"/api/v1/onboarding/awakening/baselines/{second_baseline['id']}/goal-link",
+        json={"goal_id": another_goal["id"]},
+    )
+    assert unknown_link.status_code == 200
+    linked_unknown_goal = next(
+        item
+        for item in client.get("/api/v1/goals").json()
+        if item["id"] == another_goal["id"]
+    )
+    assert linked_unknown_goal["starting_points"][0]["status"] == "unknown"
+    third_baseline = client.post(
+        "/api/v1/onboarding/awakening/baselines",
+        json={
+            "domain": "learning",
+            "metric_name": "Reading time",
+            "status": "recorded",
+            "value": 2,
+            "unit": "hours",
+        },
+    ).json()
+    _record_baseline_consent(client, granted=False)
+    withdrawn = client.post(
+        f"/api/v1/onboarding/awakening/baselines/{third_baseline['id']}/goal-link",
+        json={"goal_id": goal["id"]},
+    )
+    assert withdrawn.status_code == 403
+
+
 def test_awakening_baseline_requires_value_and_unit_for_recorded_entries(
     client, test_user
 ) -> None:
@@ -314,6 +437,13 @@ def test_campaign_is_90_days_and_owned(client, test_user, db_session: Session) -
     assert (
         client.delete(
             f"/api/v1/onboarding/awakening/baselines/{foreign_baseline.id}"
+        ).status_code
+        == 404
+    )
+    assert (
+        client.post(
+            f"/api/v1/onboarding/awakening/baselines/{foreign_baseline.id}/goal-link",
+            json={"goal_id": "00000000-0000-0000-0000-000000000009"},
         ).status_code
         == 404
     )

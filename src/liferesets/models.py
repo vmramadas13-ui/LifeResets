@@ -14,6 +14,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
@@ -220,6 +221,9 @@ class Goal(Base):
 
     user: Mapped[User] = relationship(back_populates="goals")
     metrics: Mapped[list[GoalMetric]] = relationship(
+        back_populates="goal", cascade="all, delete-orphan", passive_deletes=True
+    )
+    baseline_links: Mapped[list[AwakeningBaselineGoalLink]] = relationship(
         back_populates="goal", cascade="all, delete-orphan", passive_deletes=True
     )
 
@@ -513,6 +517,32 @@ class AwakeningBaseline(Base):
     )
 
     user: Mapped[User] = relationship(back_populates="awakening_baselines")
+    goal_link: Mapped[AwakeningBaselineGoalLink | None] = relationship(
+        back_populates="baseline",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        uselist=False,
+    )
+
+
+class AwakeningBaselineGoalLink(Base):
+    """A user-approved association between a starting point and an active goal."""
+
+    __tablename__ = "awakening_baseline_goal_links"
+    __table_args__ = (Index("ix_baseline_goal_links_goal_id", "goal_id"),)
+
+    baseline_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("awakening_baselines.id", ondelete="CASCADE"), primary_key=True
+    )
+    goal_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("goals.id", ondelete="CASCADE"), nullable=False
+    )
+    linked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+    baseline: Mapped[AwakeningBaseline] = relationship(back_populates="goal_link")
+    goal: Mapped[Goal] = relationship(back_populates="baseline_links")
 
 
 class Campaign(Base):

@@ -18,6 +18,7 @@ from liferesets.domain_data import DomainCode
 from liferesets.models import (
     AuditEvent,
     AwakeningBaseline,
+    AwakeningBaselineGoalLink,
     Campaign,
     ConsentRecord,
     Goal,
@@ -77,6 +78,11 @@ class AwakeningBaselineInput(BaseModel):
         if self.status == "unknown" and self.value is not None:
             raise ValueError("An unknown baseline cannot include a numeric value")
         return self
+
+
+class AwakeningBaselineGoalLinkInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    goal_id: UUID
 
 
 AWAKENING_PROMPTS = (
@@ -217,6 +223,7 @@ def _review_payload(review: Review) -> dict[str, object]:
 
 
 def _baseline_payload(item: AwakeningBaseline) -> dict[str, object]:
+    goal_link = item.goal_link
     return {
         "id": str(item.id),
         "domain": item.domain,
@@ -227,6 +234,9 @@ def _baseline_payload(item: AwakeningBaseline) -> dict[str, object]:
         "measured_on": item.measured_on.isoformat() if item.measured_on else None,
         "confidence": item.confidence,
         "recorded_at": item.recorded_at.isoformat(),
+        "goal_id": str(goal_link.goal_id) if goal_link else None,
+        "goal_title": goal_link.goal.title if goal_link else None,
+        "linked_at": goal_link.linked_at.isoformat() if goal_link else None,
     }
 
 
@@ -244,6 +254,11 @@ def get_awakening(
     baselines = db.scalars(
         select(AwakeningBaseline)
         .where(AwakeningBaseline.user_id == auth.user.id)
+        .options(
+            selectinload(AwakeningBaseline.goal_link).selectinload(
+                AwakeningBaselineGoalLink.goal
+            )
+        )
         .order_by(AwakeningBaseline.recorded_at, AwakeningBaseline.id)
     ).all()
     steps = [
@@ -321,6 +336,133 @@ def delete_awakening_baseline(
     _audit(db, auth.user, "onboarding.baseline_deleted")
     db.commit()
     return {"status": "deleted"}
+
+
+@router.post("/onboarding/awakening/baselines/{baseline_id}/goal-link")
+def link_awakening_baseline_to_goal(
+    baseline_id: UUID,
+    request: AwakeningBaselineGoalLinkInput,
+    auth: AuthenticatedWithCsrf,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    """Attach an existing starting point to a same-area goal after user choice."""
+    baseline = db.scalar(
+        select(AwakeningBaseline)
+        .where(
+            AwakeningBaseline.id == baseline_id,
+            AwakeningBaseline.user_id == auth.user.id,
+        )
+        .options(
+            selectinload(AwakeningBaseline.goal_link).selectinload(
+                AwakeningBaselineGoalLink.goal
+            )
+        )
+    )
+    if baseline is None:
+        raise HTTPException(status_code=404, detail="Baseline not found")
+    if baseline.goal_link is not None:
+        if baseline.goal_link.goal_id == request.goal_id:
+            return {
+                "created": False,
+                "baseline": _baseline_payload(baseline),
+            }
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "baseline_already_linked",
+                "message": "Unlink this starting point before choosing another goal.",
+            },
+        )
+    if not _consent_active(db, auth.user.id, "assessment_baseline_storage"):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "baseline_consent_required",
+                "message": (
+                    "Grant assessment_baseline_storage consent before linking "
+                    "a starting point."
+                ),
+            },
+        )
+    goal = db.scalar(
+        select(Goal).where(
+            Goal.id == request.goal_id,
+            Goal.user_id == auth.user.id,
+            Goal.status == "active",
+        )
+    )
+    if goal is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "resource_not_found",
+                "message": "The requested resource was not found.",
+            },
+        )
+    if goal.domain != baseline.domain:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "baseline_goal_domain_mismatch",
+                "message": "Choose an active goal in the same life area.",
+            },
+        )
+    link = AwakeningBaselineGoalLink(baseline=baseline, goal=goal)
+    db.add(link)
+    _audit(db, auth.user, "onboarding.baseline_linked_to_goal")
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        existing = db.scalar(
+            select(AwakeningBaselineGoalLink)
+            .where(AwakeningBaselineGoalLink.baseline_id == baseline_id)
+            .options(selectinload(AwakeningBaselineGoalLink.goal))
+        )
+        if existing is None:
+            raise
+        if existing.goal_id != request.goal_id:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "baseline_already_linked",
+                    "message": (
+                        "Unlink this starting point before choosing another goal."
+                    ),
+                },
+            )
+        baseline.goal_link = existing
+        return {
+            "created": False,
+            "baseline": _baseline_payload(baseline),
+        }
+    db.refresh(link)
+    return {"created": True, "baseline": _baseline_payload(baseline)}
+
+
+@router.delete("/onboarding/awakening/baselines/{baseline_id}/goal-link")
+def unlink_awakening_baseline_from_goal(
+    baseline_id: UUID,
+    auth: AuthenticatedWithCsrf,
+    db: Session = Depends(get_db),
+) -> dict[str, bool]:
+    """Remove only the association; keep the starting point and goal records."""
+    baseline = db.scalar(
+        select(AwakeningBaseline)
+        .where(
+            AwakeningBaseline.id == baseline_id,
+            AwakeningBaseline.user_id == auth.user.id,
+        )
+        .options(selectinload(AwakeningBaseline.goal_link))
+    )
+    if baseline is None:
+        raise HTTPException(status_code=404, detail="Baseline not found")
+    if baseline.goal_link is None:
+        return {"unlinked": False}
+    db.delete(baseline.goal_link)
+    _audit(db, auth.user, "onboarding.baseline_unlinked_from_goal")
+    db.commit()
+    return {"unlinked": True}
 
 
 @router.patch("/onboarding/awakening/{step_number}")
@@ -677,6 +819,11 @@ def export_lifecycle_data(
     baselines = db.scalars(
         select(AwakeningBaseline)
         .where(AwakeningBaseline.user_id == user_id)
+        .options(
+            selectinload(AwakeningBaseline.goal_link).selectinload(
+                AwakeningBaselineGoalLink.goal
+            )
+        )
         .order_by(AwakeningBaseline.recorded_at, AwakeningBaseline.id)
     ).all()
     return {

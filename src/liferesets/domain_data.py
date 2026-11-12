@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session, selectinload
 from liferesets.database import get_db
 from liferesets.models import (
     AuditEvent,
+    AwakeningBaselineGoalLink,
     Evidence,
     Goal,
     GoalMetric,
@@ -417,6 +418,28 @@ def _goal_payload(goal: Goal) -> dict[str, object]:
         "status": goal.status,
         "target_date": goal.target_date.isoformat() if goal.target_date else None,
         "metrics": [_metric_payload(metric) for metric in goal.metrics],
+        "starting_points": [
+            {
+                "id": str(link.baseline.id),
+                "domain": link.baseline.domain,
+                "metric_name": link.baseline.metric_name,
+                "status": link.baseline.status,
+                "value": (
+                    str(link.baseline.value)
+                    if link.baseline.value is not None
+                    else None
+                ),
+                "unit": link.baseline.unit,
+                "measured_on": (
+                    link.baseline.measured_on.isoformat()
+                    if link.baseline.measured_on
+                    else None
+                ),
+            }
+            for link in sorted(
+                goal.baseline_links, key=lambda item: (item.linked_at, item.baseline_id)
+            )
+        ],
     }
 
 
@@ -555,7 +578,12 @@ def export_domain_data(
     goals = db.scalars(
         select(Goal)
         .where(Goal.user_id == user_id)
-        .options(selectinload(Goal.metrics).selectinload(GoalMetric.measurements))
+        .options(
+            selectinload(Goal.metrics).selectinload(GoalMetric.measurements),
+            selectinload(Goal.baseline_links).selectinload(
+                AwakeningBaselineGoalLink.baseline
+            ),
+        )
         .order_by(Goal.created_at, Goal.id)
     ).all()
     tasks = db.scalars(
@@ -622,7 +650,12 @@ def list_goals(
     goals = db.scalars(
         select(Goal)
         .where(Goal.user_id == auth.user.id)
-        .options(selectinload(Goal.metrics).selectinload(GoalMetric.measurements))
+        .options(
+            selectinload(Goal.metrics).selectinload(GoalMetric.measurements),
+            selectinload(Goal.baseline_links).selectinload(
+                AwakeningBaselineGoalLink.baseline
+            ),
+        )
         .order_by(Goal.created_at, Goal.id)
     ).all()
     return [_goal_payload(goal) for goal in goals]
@@ -674,7 +707,12 @@ def get_goal(
     goal = db.scalar(
         select(Goal)
         .where(Goal.id == goal_id, Goal.user_id == auth.user.id)
-        .options(selectinload(Goal.metrics).selectinload(GoalMetric.measurements))
+        .options(
+            selectinload(Goal.metrics).selectinload(GoalMetric.measurements),
+            selectinload(Goal.baseline_links).selectinload(
+                AwakeningBaselineGoalLink.baseline
+            ),
+        )
     )
     if goal is None:
         raise _not_found()

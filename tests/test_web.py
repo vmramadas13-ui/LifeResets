@@ -38,6 +38,7 @@ def test_web_shell_and_pwa_files_are_served() -> None:
         app_script = client.get("/static/app.js")
         assert app_script.status_code == 200
         assert "Turn next step into a task" in app_script.text
+        assert "Link to an active goal" in app_script.text
         assert (
             "deleting the review answers will not delete this task"
             in app_script.text.lower()
@@ -51,6 +52,10 @@ def test_web_shell_and_pwa_files_are_served() -> None:
         assert 'id="awakening-baseline-panel"' in page.text
         assert 'id="awakening-baseline-consent"' in page.text
         assert 'id="awakening-baseline-form"' in page.text
+        assert (
+            "Linking does not copy the value or create a metric, target, "
+            "goal, or score." in page.text
+        )
         assert 'rel="apple-touch-icon"' in page.text
         manifest = client.get("/manifest.webmanifest")
         assert manifest.status_code == 200

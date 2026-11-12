@@ -156,6 +156,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .baseline-panel { margin-top: 20px; padding-top: 18px; border-top: 2px solid var(--line); }
 .baseline-panel h3 { margin-bottom: 8px; }
 .baseline-domain-item { display: grid; gap: 8px; }
+.goal-starting-points { margin: 7px 0 12px; padding: 10px 12px 10px 28px; border-left: 3px solid var(--sky); color: var(--muted); font-size: .86rem; }
 .baseline-history { margin: 0 0 0 12px; padding: 0; list-style: none; }
 .baseline-history li { display: grid; gap: 4px; padding: 8px 0; border-top: 1px solid var(--line); }
 .baseline-history .text-button { justify-self: start; min-height: 36px; }
