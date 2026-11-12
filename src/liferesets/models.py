@@ -477,6 +477,38 @@ class OnboardingStep(Base):
     user: Mapped[User] = relationship(back_populates="onboarding_steps")
 
 
+class AwakeningAssessment(Base):
+    """User-authored, editable reflection for one built-in life area."""
+
+    __tablename__ = "awakening_assessments"
+    __table_args__ = (
+        UniqueConstraint("user_id", "domain", name="unique_user_assessment_domain"),
+        CheckConstraint(
+            "domain IN ('career','fitness','finance','discipline','learning',"
+            "'mental_wellness','relationships','lifestyle')",
+            name="valid_awakening_assessment_domain",
+        ),
+        CheckConstraint(
+            "length(trim(coalesce(current_reality, ''))) > 0 OR "
+            "length(trim(coalesce(desired_direction, ''))) > 0 OR "
+            "length(trim(coalesce(experiment, ''))) > 0",
+            name="nonempty_awakening_assessment",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    domain: Mapped[str] = mapped_column(String(32), nullable=False)
+    current_reality: Mapped[str | None] = mapped_column(Text, nullable=True)
+    desired_direction: Mapped[str | None] = mapped_column(Text, nullable=True)
+    experiment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+
 class AwakeningBaseline(Base):
     """Append-only, user-entered numeric baseline or explicit unknown marker."""
 

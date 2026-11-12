@@ -155,6 +155,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .record-list small { margin-top: 4px; color: var(--muted); }
 .baseline-panel { margin-top: 20px; padding-top: 18px; border-top: 2px solid var(--line); }
 .baseline-panel h3 { margin-bottom: 8px; }
+.awakening-assessment-list details { margin-top: 0; padding: 12px 0; border-top: 1px solid var(--line); }
+.awakening-assessment-list details:first-child { border-top: 0; }
+.awakening-assessment-list details form { display: grid; gap: 10px; margin-top: 8px; }
+.awakening-assessment-list details textarea { min-height: 84px; }
+.awakening-assessment-list .assessment-guidance { margin: 0; }
 .baseline-domain-item { display: grid; gap: 8px; }
 .goal-starting-points { margin: 7px 0 12px; padding: 10px 12px 10px 28px; border-left: 3px solid var(--sky); color: var(--muted); font-size: .86rem; }
 .baseline-history { margin: 0 0 0 12px; padding: 0; list-style: none; }

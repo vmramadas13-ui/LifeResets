@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date
 from decimal import Decimal
 from typing import Literal
 from uuid import UUID
@@ -17,6 +17,7 @@ from liferesets.database import get_db
 from liferesets.domain_data import DomainCode
 from liferesets.models import (
     AuditEvent,
+    AwakeningAssessment,
     AwakeningBaseline,
     AwakeningBaselineGoalLink,
     Campaign,
@@ -83,6 +84,21 @@ class AwakeningBaselineInput(BaseModel):
 class AwakeningBaselineGoalLinkInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     goal_id: UUID
+
+
+class AwakeningAssessmentUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    current_reality: str | None = Field(default=None, max_length=1200)
+    desired_direction: str | None = Field(default=None, max_length=1200)
+    experiment: str | None = Field(default=None, max_length=1200)
+
+    @field_validator("current_reality", "desired_direction", "experiment")
+    @classmethod
+    def trim_assessment_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
 
 
 AWAKENING_PROMPTS = (
@@ -269,6 +285,20 @@ def _baseline_payload(item: AwakeningBaseline) -> dict[str, object]:
     }
 
 
+def _assessment_payload(item: AwakeningAssessment) -> dict[str, object]:
+    updated_at = item.updated_at
+    if updated_at.tzinfo is None:
+        updated_at = updated_at.replace(tzinfo=UTC)
+    return {
+        "id": str(item.id),
+        "domain": item.domain,
+        "current_reality": item.current_reality,
+        "desired_direction": item.desired_direction,
+        "experiment": item.experiment,
+        "updated_at": updated_at.isoformat(),
+    }
+
+
 @router.get("/onboarding/awakening")
 def get_awakening(
     auth: Authenticated, db: Session = Depends(get_db)
@@ -290,6 +320,11 @@ def get_awakening(
         )
         .order_by(AwakeningBaseline.recorded_at, AwakeningBaseline.id)
     ).all()
+    assessments = db.scalars(
+        select(AwakeningAssessment)
+        .where(AwakeningAssessment.user_id == auth.user.id)
+        .order_by(AwakeningAssessment.domain)
+    ).all()
     steps = [
         {
             "step": number,
@@ -310,6 +345,66 @@ def get_awakening(
             db, auth.user.id, "assessment_baseline_storage"
         ),
         "baselines": [_baseline_payload(item) for item in baselines],
+        "assessments": [_assessment_payload(item) for item in assessments],
+    }
+
+
+@router.patch("/onboarding/awakening/assessments/{domain}")
+def update_awakening_assessment(
+    domain: DomainCode,
+    changes: AwakeningAssessmentUpdate,
+    auth: AuthenticatedWithCsrf,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    """Save or clear user-authored notes for one life area."""
+    if not _consent_active(db, auth.user.id, "awakening_storage"):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "awakening_consent_required",
+                "message": (
+                    "Grant awakening_storage consent before saving assessment notes."
+                ),
+            },
+        )
+    if not changes.model_fields_set:
+        raise HTTPException(status_code=422, detail="Provide assessment fields to save")
+
+    assessment = db.scalar(
+        select(AwakeningAssessment).where(
+            AwakeningAssessment.user_id == auth.user.id,
+            AwakeningAssessment.domain == domain,
+        )
+    )
+    if assessment is not None:
+        for field in changes.model_fields_set:
+            setattr(assessment, field, getattr(changes, field))
+
+    if assessment is None:
+        values = changes.model_dump(exclude_unset=True)
+        if not any(values.values()):
+            return {"saved": False, "assessment": None}
+        assessment = AwakeningAssessment(user_id=auth.user.id, domain=domain, **values)
+        db.add(assessment)
+        saved = True
+    elif not any(
+        getattr(assessment, field)
+        for field in ("current_reality", "desired_direction", "experiment")
+    ):
+        db.delete(assessment)
+        saved = False
+    else:
+        saved = True
+
+    _audit(
+        db,
+        auth.user,
+        "onboarding.assessment_saved" if saved else "onboarding.assessment_cleared",
+    )
+    db.commit()
+    return {
+        "saved": saved,
+        "assessment": _assessment_payload(assessment) if saved else None,
     }
 
 
@@ -544,7 +639,7 @@ def update_awakening_step(
 def delete_awakening_answers(
     auth: AuthenticatedWithCsrf, db: Session = Depends(get_db)
 ) -> dict[str, int]:
-    """Remove all saved prompt answers while preserving progress markers."""
+    """Remove saved answers and assessment notes while preserving progress."""
     steps = db.scalars(
         select(OnboardingStep).where(OnboardingStep.user_id == auth.user.id)
     ).all()
@@ -553,9 +648,14 @@ def delete_awakening_answers(
         if step.answer is not None:
             deleted += 1
             step.answer = None
+    assessments = db.scalars(
+        select(AwakeningAssessment).where(AwakeningAssessment.user_id == auth.user.id)
+    ).all()
+    for assessment in assessments:
+        db.delete(assessment)
     _audit(db, auth.user, "onboarding.answers_deleted")
     db.commit()
-    return {"deleted_answers": deleted}
+    return {"deleted_answers": deleted, "deleted_assessments": len(assessments)}
 
 
 @router.get("/campaigns")
@@ -841,6 +941,11 @@ def export_lifecycle_data(
     steps = db.scalars(
         select(OnboardingStep).where(OnboardingStep.user_id == user_id)
     ).all()
+    assessments = db.scalars(
+        select(AwakeningAssessment)
+        .where(AwakeningAssessment.user_id == user_id)
+        .order_by(AwakeningAssessment.domain)
+    ).all()
     reviews = db.scalars(
         select(Review)
         .where(Review.user_id == user_id)
@@ -877,6 +982,7 @@ def export_lifecycle_data(
             }
             for item in steps
         ],
+        "awakening_assessments": [_assessment_payload(item) for item in assessments],
         "awakening_baselines": [_baseline_payload(item) for item in baselines],
         "reviews": [_review_payload(item) for item in reviews],
     }

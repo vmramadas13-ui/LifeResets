@@ -135,9 +135,61 @@ def test_awakening_withdrawal_blocks_answer_updates_and_delete_clears_answers(
     )
     deleted = client.delete("/api/v1/onboarding/awakening/answers")
     assert deleted.status_code == 200
-    assert deleted.json() == {"deleted_answers": 1}
+    assert deleted.json() == {"deleted_answers": 1, "deleted_assessments": 0}
     assert (
         client.get("/api/v1/onboarding/awakening").json()["steps"][1]["answer"] is None
+    )
+
+
+def test_awakening_life_area_assessments_are_consent_gated_editable_and_exportable(
+    client, test_user
+) -> None:
+    _login(client, test_user)
+    path = "/api/v1/onboarding/awakening/assessments/career"
+    payload = {
+        "current_reality": "I am exploring a new role.",
+        "desired_direction": "Build a portfolio.",
+        "experiment": "Ask for feedback on one project.",
+    }
+    assert client.patch(path, json=payload).status_code == 403
+
+    _record_awakening_consent(client)
+    saved = client.patch(path, json=payload)
+    assert saved.status_code == 200
+    assert saved.json()["saved"] is True
+    assert saved.json()["assessment"]["domain"] == "career"
+
+    updated = client.patch(path, json={"current_reality": "I started a project."})
+    assert updated.status_code == 200
+    assert updated.json()["assessment"]["current_reality"] == "I started a project."
+    assert updated.json()["assessment"]["desired_direction"] == "Build a portfolio."
+    assert updated.json()["assessment"]["experiment"] == (
+        "Ask for feedback on one project."
+    )
+    current = client.get("/api/v1/onboarding/awakening").json()
+    assert current["assessments"] == [updated.json()["assessment"]]
+    exported = client.get("/api/v1/export").json()["lifecycle_data"][
+        "awakening_assessments"
+    ]
+    assert exported == current["assessments"]
+
+    _record_awakening_consent(client, granted=False)
+    blocked = client.patch(path, json={"experiment": "Change after withdrawal."})
+    assert blocked.status_code == 403
+    assert (
+        client.patch(
+            "/api/v1/onboarding/awakening/assessments/not-a-domain",
+            json={"current_reality": "Invalid area."},
+        ).status_code
+        == 422
+    )
+
+    deleted = client.delete("/api/v1/onboarding/awakening/answers")
+    assert deleted.json() == {"deleted_answers": 0, "deleted_assessments": 1}
+    assert client.get("/api/v1/onboarding/awakening").json()["assessments"] == []
+    assert (
+        client.get("/api/v1/export").json()["lifecycle_data"]["awakening_assessments"]
+        == []
     )
 
 

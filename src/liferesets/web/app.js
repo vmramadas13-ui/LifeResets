@@ -852,7 +852,101 @@ function renderAwakening(awakening, selectedIndex = null) {
   $("#awakening-save").textContent = awakeningStepIndex === awakening.steps.length - 1 ? "Complete prompt" : "Complete and continue";
   $("#awakening-skip").textContent = step.status === "skipped" ? "Keep skipped" : "Skip this prompt";
   $("#awakening-complete").hidden = resolved !== awakening.steps.length;
+  renderAwakeningAssessments(awakening, step);
   renderAwakeningBaselines(awakening, step);
+}
+
+const awakeningAssessmentGuidance = {
+  career: "Work, skills, opportunities, or changes you want to explore.",
+  fitness: "Movement, training, nutrition, and recovery, in terms that suit you.",
+  finance: "Money-related routines or goals. Exact amounts are not needed.",
+  discipline: "Focus, routines, and follow-through without judging missed days.",
+  learning: "Knowledge or skills you have now and would like to develop.",
+  mental_wellness: "What supports your wellbeing. This is not a diagnosis or treatment tool.",
+  relationships: "Connection, commitments, and boundaries that matter to you.",
+  lifestyle: "Sleep, surroundings, and everyday rhythms that shape your life.",
+};
+
+function renderAwakeningAssessments(awakening, step) {
+  const panel = $("#awakening-assessment-panel");
+  const relevantSteps = [2, 5, 6];
+  panel.hidden = !relevantSteps.includes(step.day);
+  if (panel.hidden) return;
+
+  const allowedCodes = step.day === 5
+    ? new Set(["fitness", "mental_wellness", "discipline"])
+    : step.day === 6
+      ? new Set(["finance", "relationships", "lifestyle"])
+      : null;
+  const domains = workspaceDomains.filter((domain) => !allowedCodes || allowedCodes.has(domain.code));
+  const assessments = new Map((awakening.assessments || []).map((item) => [item.domain, item]));
+  const fields = [
+    ["current_reality", "Current reality", "What is life like in this area now?"],
+    ["desired_direction", "Strength or direction", "What would you like to maintain, develop, or change?"],
+    ["experiment", "Small real-world check (optional)", "What low-risk action or observation could help you learn more?"],
+  ];
+  const consent = Boolean(awakening.storage_consent);
+  const rows = domains.map((domain) => {
+    const saved = assessments.get(domain.code);
+    const details = document.createElement("details");
+    details.open = Boolean(saved);
+    const summary = document.createElement("summary");
+    summary.textContent = saved ? `${domain.name} · notes saved` : domain.name;
+    const guidance = document.createElement("p");
+    guidance.className = "field-hint assessment-guidance";
+    guidance.textContent = awakeningAssessmentGuidance[domain.code] || domain.description;
+    const form = document.createElement("form");
+
+    for (const [name, labelText, placeholder] of fields) {
+      const label = document.createElement("label");
+      label.textContent = labelText;
+      const input = document.createElement("textarea");
+      input.name = name;
+      input.maxLength = 1200;
+      input.rows = 3;
+      input.placeholder = placeholder;
+      input.value = saved?.[name] || "";
+      input.disabled = !consent;
+      label.append(input);
+      form.append(label);
+    }
+
+    const save = document.createElement("button");
+    save.type = "submit";
+    save.textContent = saved ? "Save changes" : "Save area notes";
+    save.disabled = !consent;
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const payload = Object.fromEntries(fields.map(([name]) => [name, form.elements[name].value]));
+      save.disabled = true;
+      try {
+        const result = await api(`/api/v1/onboarding/awakening/assessments/${domain.code}`, {
+          method: "PATCH",
+          body: JSON.stringify(payload),
+        });
+        const updated = awakeningData.assessments || [];
+        awakeningData.assessments = result.assessment
+          ? [...updated.filter((item) => item.domain !== domain.code), result.assessment]
+          : updated.filter((item) => item.domain !== domain.code);
+        summary.textContent = result.saved ? `${domain.name} · notes saved` : domain.name;
+        save.textContent = result.saved ? "Save changes" : "Save area notes";
+        save.disabled = !awakeningData.storage_consent;
+        showNotice(result.saved ? `${domain.name} notes saved.` : `${domain.name} notes cleared.`);
+      } catch (error) {
+        save.disabled = !awakeningData.storage_consent;
+        showNotice(error.message);
+      }
+    });
+
+    form.append(save);
+    details.append(summary, guidance, form);
+    return details;
+  });
+  const empty = document.createElement("p");
+  empty.className = "field-hint";
+  empty.textContent = "Allow reflection storage above to save or edit these notes.";
+  empty.hidden = consent;
+  $("#awakening-assessment-list").replaceChildren(empty, ...rows);
 }
 
 function syncAwakeningBaselineForm() {
@@ -1384,9 +1478,14 @@ $("#awakening-consent").addEventListener("change", async (event) => {
       }),
     });
     if (awakeningData) awakeningData.storage_consent = checkbox.checked;
+    $("#awakening-assessment-list").querySelectorAll("textarea, button").forEach((input) => {
+      input.disabled = !checkbox.checked;
+    });
+    const empty = $("#awakening-assessment-list").querySelector(".field-hint");
+    if (empty) empty.hidden = checkbox.checked;
     showNotice(checkbox.checked
-      ? "Awakening answer storage is on for this local account."
-      : "New Awakening answers will not be saved. Existing answers remain until deleted.");
+      ? "Awakening reflection and area-note storage is on for this local account."
+      : "New answers will not be saved. Existing reflections and area notes remain until deleted.");
   } catch (error) {
     checkbox.checked = !checkbox.checked;
     showNotice(error.message);
@@ -1525,7 +1624,8 @@ $("#awakening-delete").addEventListener("click", async () => {
   try {
     const result = await api("/api/v1/onboarding/awakening/answers", { method: "DELETE" });
     await loadWorkspace();
-    showNotice(`${result.deleted_answers} saved answer${result.deleted_answers === 1 ? "" : "s"} deleted.`);
+    const deleted = result.deleted_answers + result.deleted_assessments;
+    showNotice(`${deleted} saved reflection or area note${deleted === 1 ? "" : "s"} deleted.`);
   } catch (error) {
     showNotice(error.message);
   }

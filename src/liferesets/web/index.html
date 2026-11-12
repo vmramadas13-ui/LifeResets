@@ -76,10 +76,15 @@
             <h3 id="awakening-question-title"></h3>
             <p id="awakening-prompt" class="hint"></p>
             <label>Your reflection<textarea id="awakening-answer" name="answer" maxlength="1200" rows="4"></textarea></label>
-            <label class="check-row"><input id="awakening-consent" type="checkbox"><span>Allow LifeResets to save these reflections in this local app database.</span></label>
-            <p class="field-hint">Saved answers are included in your account export and are not sent to an AI provider by this flow. Unchecking stops new saves; use “Delete saved answers” to remove existing answers. The database is not encrypted at rest yet, so do not enter passwords, access codes, or exact health or financial details here.</p>
+            <label class="check-row"><input id="awakening-consent" type="checkbox"><span>Allow LifeResets to save reflections and life-area notes in this local app database.</span></label>
+            <p class="field-hint">Saved reflections and area notes are included in your account export and are not sent to an AI provider by this flow. Unchecking stops new saves; use “Delete saved reflections and area notes” to remove existing data. The database is not encrypted at rest yet, so do not enter passwords, access codes, or exact health or financial details here.</p>
             <div class="awakening-actions"><button id="awakening-previous" type="button" class="quiet">Previous</button><button id="awakening-skip" type="button" class="quiet">Skip this prompt</button><button id="awakening-save-later" type="button" class="quiet">Save for later</button><button type="submit" id="awakening-save">Complete and continue</button></div>
           </form>
+          <section id="awakening-assessment-panel" class="baseline-panel" aria-labelledby="awakening-assessment-title" hidden>
+            <h3 id="awakening-assessment-title">Life-area assessment</h3>
+            <p class="hint">Explore one area at a time. Notes are optional, editable, and never create goals or tasks automatically.</p>
+            <div id="awakening-assessment-list" class="awakening-assessment-list"></div>
+          </section>
           <section id="awakening-baseline-panel" class="baseline-panel" aria-labelledby="awakening-baseline-title" hidden>
             <h3 id="awakening-baseline-title">Starting points across your life areas</h3>
             <p id="awakening-baseline-intro" class="hint">Add a numeric measure you choose, or explicitly mark an area unknown. This does not create a goal or an overall score.</p>
@@ -101,7 +106,7 @@
             </form>
           </section>
           <p id="awakening-complete" class="empty-note" hidden>All seven prompts are complete. You can return to review or update any answer.</p>
-          <button id="awakening-delete" type="button" class="quiet">Delete saved answers</button>
+          <button id="awakening-delete" type="button" class="quiet">Delete saved reflections and area notes</button>
         </section>
         <section id="goals-section" class="card"><div class="section-heading"><div><p class="eyebrow">YOUR DIRECTION</p><h2>Goals</h2></div><button id="refresh-goals" class="quiet">Refresh</button></div><ul id="goals" class="record-list"></ul>
           <details class="domain-settings-panel"><summary>Customize life areas</summary><p class="hint">Rename, reorder, or hide the eight built-in areas. Hiding an area keeps its existing goals and history.</p><form id="domain-settings-form"><div id="domain-settings" class="domain-settings"></div><button>Save life area settings</button></form></details>
