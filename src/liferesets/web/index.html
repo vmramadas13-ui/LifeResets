@@ -83,7 +83,18 @@
           <details><summary>Add a goal</summary><form id="goal-form"><label>Domain<select name="domain" required></select></label><label>Goal title<input name="title" maxlength="160" required></label><label>Target date<input name="target_date" type="date"></label><button>Create goal</button></form></details>
         </section>
         <section class="card"><p class="eyebrow">A 90-DAY FOCUS</p><h2><span data-game-term="Campaigns" data-standard-term="Long-range focus">Campaigns</span></h2><ul id="campaigns" class="record-list"></ul><form id="campaign-form"><label>Campaign title<input name="title" maxlength="160" required></label><label>Objective<input name="objective" maxlength="2000" required></label><label>Start date<input name="starts_on" type="date" required></label><label>End date (90 days)<input name="ends_on" type="date" required></label><button>Create campaign</button></form></section>
-        <section class="card"><p class="eyebrow">WEEKLY AND MONTHLY CHECK-IN</p><h2>Reviews</h2><ul id="reviews" class="record-list"></ul><form id="review-form"><label>Review type<select name="cadence"><option value="weekly">Weekly Tribunal</option><option value="monthly">Monthly Ascension</option></select></label><label>Period start<input name="period_start" type="date" required></label><label>Period end<input name="period_end" type="date" required></label><button>Start review</button></form><p class="hint">Free-text reflections require separate reflection_storage consent through the consent API.</p></section>
+        <section id="reviews-section" class="card" aria-labelledby="reviews-title">
+          <p class="eyebrow">WEEKLY AND MONTHLY CHECK-IN</p><h2 id="reviews-title">Reviews</h2>
+          <ul id="reviews" class="record-list"></ul>
+          <form id="review-form">
+            <label>Review type<select name="cadence"><option value="weekly">Weekly review</option><option value="monthly">Monthly review</option></select></label>
+            <label>Period start<input name="period_start" type="date" required></label>
+            <label>Period end<input name="period_end" type="date" required></label>
+            <button>Start review</button>
+          </form>
+          <label class="check-row"><input id="reflection-consent" type="checkbox"><span>Allow LifeResets to save my review answers in this local app database.</span></label>
+          <p class="hint">Answers are included in your account export and are not sent to an AI provider. You can withdraw permission and delete saved answers from each review. The database is not encrypted at rest yet, so avoid exact health or financial details here.</p>
+        </section>
         <section class="card"><div class="section-heading"><div><p class="eyebrow">A SMALL NEXT STEP</p><h2>Plan preview</h2></div><button id="refresh-plan" class="quiet">Build preview</button></div><ul id="quests" class="record-list"></ul><p class="hint">Preview only. Nothing is saved or scheduled.</p></section>
         <section class="card"><div class="section-heading"><div><p class="eyebrow">UPCOMING</p><h2>Reminders</h2></div><button id="refresh-inbox" class="quiet">Refresh</button></div><ul id="inbox" class="record-list"></ul><p><a href="/api/v1/calendar.ics">Download calendar (.ics)</a></p><p class="hint">In-app only. No push or external calendar delivery is connected.</p></section>
         <section id="character-section" class="card character-card" aria-labelledby="character-title">

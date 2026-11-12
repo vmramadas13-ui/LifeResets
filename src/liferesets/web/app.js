@@ -8,6 +8,7 @@ let coreReply = "";
 let activeAgentActionId = null;
 let awakeningData = null;
 let awakeningStepIndex = 0;
+let reflectionStorageConsent = false;
 
 function readPreference(name, fallback = "false") {
   try { return localStorage.getItem(`lr-${name}`) ?? fallback; }
@@ -512,12 +513,17 @@ async function loadWorkspace() {
   $("#logout").hidden = false;
   if (!$("#daily-plan-date").value) $("#daily-plan-date").value = localDateString();
   const planDate = $("#daily-plan-date").value;
-  const [domains, goals, habits, preview, rpg, insights, inbox, awakening, campaigns, reviews, tasks, currentPlan, recovery, skills, chronicle, agentActions] = await Promise.all([
+  const [domains, goals, habits, preview, rpg, insights, inbox, awakening, campaigns, reviews, consents, tasks, currentPlan, recovery, skills, chronicle, agentActions] = await Promise.all([
     api("/api/v1/domains"), api("/api/v1/goals"), api("/api/v1/habits"), api("/api/v1/plans/preview"), api("/api/v1/rpg/status"), api("/api/v1/insights/progress"), api("/api/v1/notifications/inbox"),
-    api("/api/v1/onboarding/awakening"), api("/api/v1/campaigns"), api("/api/v1/reviews"), api("/api/v1/tasks"),
+    api("/api/v1/onboarding/awakening"), api("/api/v1/campaigns"), api("/api/v1/reviews"), api("/api/v1/consents"), api("/api/v1/tasks"),
     api(`/api/v1/daily-plans/${planDate}`), api(`/api/v1/daily-plans/${planDate}/recovery`),
     api("/api/v1/rpg/skills"), api("/api/v1/rpg/chronicle"), api("/api/v1/agent/actions"),
   ]);
+  const latestReflectionConsent = consents
+    .filter((record) => record.purpose === "reflection_storage")
+    .reverse()[0];
+  reflectionStorageConsent = Boolean(latestReflectionConsent?.granted);
+  $("#reflection-consent").checked = reflectionStorageConsent;
   workspaceDomains = domains;
   renderDomainSettings(domains);
   const activeDomains = domains.filter((domain) => domain.enabled);
@@ -787,10 +793,90 @@ function renderCampaigns(campaigns) {
 function renderReviews(reviews) {
   const rows = reviews.map((review) => {
     const item = document.createElement("li");
-    const title = document.createElement("strong"); title.textContent = `${review.cadence} review · ${review.period_start} to ${review.period_end}`;
-    const detail = document.createElement("small"); detail.textContent = review.status;
-    item.append(title, detail); return item;
+    const title = document.createElement("strong");
+    title.textContent = `${review.cadence} review · ${review.period_start} to ${review.period_end}`;
+    const detail = document.createElement("small");
+    detail.textContent = review.status === "completed" ? "Completed" : "Draft";
+    const disclosure = document.createElement("details");
+    const summary = document.createElement("summary");
+    summary.textContent = "Open review prompts";
+    const form = document.createElement("form");
+    form.className = "guided-review-form";
+    const responseKeys = ["wins", "blockers", "changes", "next_step"];
+    for (const key of responseKeys) {
+      const label = document.createElement("label");
+      label.textContent = review.prompts[key];
+      const answer = document.createElement("textarea");
+      answer.name = key;
+      answer.maxLength = 1200;
+      answer.rows = 3;
+      answer.value = review.responses[key] || "";
+      answer.disabled = !reflectionStorageConsent;
+      label.append(answer);
+      form.append(label);
+    }
+    const actions = document.createElement("div");
+    actions.className = "review-actions";
+    const save = document.createElement("button");
+    save.type = "submit";
+    save.dataset.reviewAction = "save";
+    save.textContent = "Save answers";
+    save.disabled = !reflectionStorageConsent;
+    const complete = document.createElement("button");
+    complete.type = "submit";
+    complete.dataset.reviewAction = "complete";
+    complete.className = "quiet";
+    complete.textContent = review.status === "completed" ? "Reopen review" : "Complete review";
+    actions.append(save, complete);
+    form.append(actions);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const action = event.submitter?.dataset.reviewAction;
+      const payload = {};
+      if (reflectionStorageConsent) {
+        payload.responses = Object.fromEntries(
+          responseKeys.map((key) => [key, form.elements[key].value.trim() || null]),
+        );
+      }
+      if (action === "save") payload.status = "draft";
+      if (action === "complete") payload.status = review.status === "completed" ? "draft" : "completed";
+      try {
+        await api(`/api/v1/reviews/${review.id}`, {
+          method: "PATCH",
+          body: JSON.stringify(payload),
+        });
+        await loadWorkspace();
+        showNotice(action === "complete" && review.status !== "completed" ? "Review completed. You can revisit it later." : "Review saved.");
+      } catch (error) {
+        showNotice(error.message);
+      }
+    });
+    if (Object.values(review.responses).some((value) => value.trim())) {
+      const deleteAnswers = document.createElement("button");
+      deleteAnswers.type = "button";
+      deleteAnswers.className = "text-button";
+      deleteAnswers.textContent = "Delete saved answers";
+      deleteAnswers.addEventListener("click", async () => {
+        if (!window.confirm("Delete the saved answers for this review? This cannot be undone.")) return;
+        try {
+          const result = await api(`/api/v1/reviews/${review.id}/responses`, { method: "DELETE" });
+          await loadWorkspace();
+          showNotice(`${result.deleted_fields} saved answer${result.deleted_fields === 1 ? "" : "s"} deleted.`);
+        } catch (error) {
+          showNotice(error.message);
+        }
+      });
+      form.append(deleteAnswers);
+    }
+    disclosure.append(summary, form);
+    item.append(title, detail, disclosure);
+    return item;
   });
+  if (!rows.length) {
+    const empty = document.createElement("li");
+    empty.textContent = "No reviews yet. Start a weekly or monthly check-in when it suits you.";
+    rows.push(empty);
+  }
   $("#reviews").replaceChildren(...rows);
 }
 
@@ -956,6 +1042,29 @@ $("#awakening-consent").addEventListener("change", async (event) => {
       : "New Awakening answers will not be saved. Existing answers remain until deleted.");
   } catch (error) {
     checkbox.checked = !checkbox.checked;
+    showNotice(error.message);
+  }
+});
+
+$("#reflection-consent").addEventListener("change", async (event) => {
+  const checkbox = event.currentTarget;
+  const granted = checkbox.checked;
+  try {
+    await api("/api/v1/consents", {
+      method: "POST",
+      body: JSON.stringify({
+        purpose: "reflection_storage",
+        granted,
+        policy_version: "v1",
+      }),
+    });
+    reflectionStorageConsent = granted;
+    await loadWorkspace();
+    showNotice(granted
+      ? "Review answer storage is on for this local account."
+      : "New review answers will not be saved. You can still delete saved answers.");
+  } catch (error) {
+    checkbox.checked = !granted;
     showNotice(error.message);
   }
 });

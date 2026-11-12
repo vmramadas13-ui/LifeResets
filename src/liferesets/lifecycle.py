@@ -71,6 +71,21 @@ AWAKENING_PROMPTS = (
     },
 )
 
+REVIEW_PROMPTS: dict[str, dict[str, str]] = {
+    "weekly": {
+        "wins": "What went well or felt meaningful this week?",
+        "blockers": "What made your plans harder?",
+        "changes": "What would you adjust next week?",
+        "next_step": "What is one small next step?",
+    },
+    "monthly": {
+        "wins": "What progress or moments mattered this month?",
+        "blockers": "What made progress harder this month?",
+        "changes": "What would you like to change next month?",
+        "next_step": "What is one focus for next month?",
+    },
+}
+
 
 class CampaignCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -144,6 +159,7 @@ def _review_payload(review: Review) -> dict[str, object]:
         "period_end": review.period_end.isoformat(),
         "status": review.status,
         "responses": review.responses,
+        "prompts": REVIEW_PROMPTS[review.cadence],
     }
 
 
@@ -383,6 +399,25 @@ def update_review(
     _audit(db, auth.user, "review.updated")
     db.commit()
     return _review_payload(review)
+
+
+@router.delete("/reviews/{review_id}/responses")
+def delete_review_responses(
+    review_id: UUID,
+    auth: AuthenticatedWithCsrf,
+    db: Session = Depends(get_db),
+) -> dict[str, int]:
+    """Delete saved reflection text while keeping the review record."""
+    review = db.scalar(
+        select(Review).where(Review.id == review_id, Review.user_id == auth.user.id)
+    )
+    if review is None:
+        raise HTTPException(status_code=404, detail="Review not found")
+    deleted_fields = len(review.responses)
+    review.responses = {}
+    _audit(db, auth.user, "review.responses_deleted")
+    db.commit()
+    return {"deleted_fields": deleted_fields}
 
 
 def export_lifecycle_data(

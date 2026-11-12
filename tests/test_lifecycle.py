@@ -3,7 +3,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from liferesets.models import Campaign, User
+from liferesets.models import Campaign, Review, User
 
 
 def _login(client, test_user: dict[str, object]) -> None:
@@ -158,12 +158,23 @@ def test_campaign_is_90_days_and_owned(client, test_user, db_session: Session) -
         starts_on=date(2026, 1, 1),
         ends_on=date(2026, 3, 31),
     )
-    db_session.add(foreign)
+    foreign_review = Review(
+        user_id=other_id,
+        cadence="weekly",
+        period_start=date(2026, 1, 1),
+        period_end=date(2026, 1, 7),
+        responses={"wins": "Private reflection"},
+    )
+    db_session.add_all([foreign, foreign_review])
     db_session.commit()
     assert (
         client.patch(
             f"/api/v1/campaigns/{foreign.id}", json={"status": "paused"}
         ).status_code
+        == 404
+    )
+    assert (
+        client.delete(f"/api/v1/reviews/{foreign_review.id}/responses").status_code
         == 404
     )
 
@@ -182,6 +193,8 @@ def test_review_responses_require_current_consent_and_export(client, test_user) 
     assert created.status_code == 201, created.text
     review = created.json()
     assert review["responses"]["wins"] == "Finished a lesson"
+    assert review["prompts"]["wins"] == "What went well or felt meaningful this week?"
+    assert set(review["prompts"]) == {"wins", "blockers", "changes", "next_step"}
     assert (
         client.get("/api/v1/export").json()["lifecycle_data"]["reviews"][0]["id"]
         == review["id"]
@@ -203,6 +216,27 @@ def test_review_responses_require_current_consent_and_export(client, test_user) 
     assert (
         client.get("/api/v1/reviews").json()[0]["responses"]["wins"]
         == "Finished a lesson"
+    )
+    deleted = client.delete(f"/api/v1/reviews/{review['id']}/responses")
+    assert deleted.status_code == 200
+    assert deleted.json() == {"deleted_fields": 1}
+    assert client.get("/api/v1/reviews").json()[0]["responses"] == {}
+
+
+def test_monthly_review_has_its_own_guided_prompts(client, test_user) -> None:
+    _login(client, test_user)
+    created = client.post(
+        "/api/v1/reviews",
+        json={
+            "cadence": "monthly",
+            "period_start": "2026-10-01",
+            "period_end": "2026-10-31",
+        },
+    )
+    assert created.status_code == 201
+    assert (
+        created.json()["prompts"]["wins"]
+        == "What progress or moments mattered this month?"
     )
 
 
