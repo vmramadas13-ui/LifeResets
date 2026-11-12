@@ -778,6 +778,138 @@ function renderAwakening(awakening, selectedIndex = null) {
   $("#awakening-save").textContent = awakeningStepIndex === awakening.steps.length - 1 ? "Complete prompt" : "Complete and continue";
   $("#awakening-skip").textContent = step.status === "skipped" ? "Keep skipped" : "Skip this prompt";
   $("#awakening-complete").hidden = resolved !== awakening.steps.length;
+  renderAwakeningBaselines(awakening, step);
+}
+
+function syncAwakeningBaselineForm() {
+  const form = $("#awakening-baseline-form");
+  const consent = Boolean(awakeningData?.baseline_storage_consent);
+  const known = form.elements.status.value === "recorded";
+  const fields = $("#awakening-baseline-value-fields");
+  fields.hidden = !known;
+  for (const input of fields.querySelectorAll("input")) {
+    input.disabled = !consent || !known;
+    input.required = consent && known && ["value", "unit"].includes(input.name);
+  }
+  form.elements.domain.disabled = !consent;
+  form.elements.metric_name.disabled = !consent;
+  form.elements.status.disabled = !consent;
+  form.querySelector('button[type="submit"]').disabled = !consent;
+}
+
+function renderAwakeningBaselines(awakening, step) {
+  const panel = $("#awakening-baseline-panel");
+  const relevantSteps = [2, 5, 6];
+  panel.hidden = !relevantSteps.includes(step.day);
+  if (panel.hidden) return;
+
+  const allowedCodes = step.day === 5
+    ? new Set(["fitness", "mental_wellness", "discipline"])
+    : step.day === 6
+      ? new Set(["finance", "relationships", "lifestyle"])
+      : null;
+  const domains = workspaceDomains.filter((domain) => !allowedCodes || allowedCodes.has(domain.code));
+  $("#awakening-baseline-title").textContent = step.day === 5
+    ? "Optional health and routine starting points"
+    : step.day === 6
+      ? "Optional finance and lifestyle starting points"
+      : "Starting points across your life areas";
+  $("#awakening-baseline-intro").textContent = step.day === 2
+    ? "Add a number you already know for any area, or mark its overall starting point unknown. No target or overall score is created."
+    : "Add a measure if you choose, or mark an overall starting point unknown. You can skip this day and begin using the app. No value is assumed.";
+  $("#awakening-baseline-consent").checked = Boolean(awakening.baseline_storage_consent);
+  const form = $("#awakening-baseline-form");
+  const selectedDomain = domains.some((domain) => domain.code === form.elements.domain.value)
+    ? form.elements.domain.value
+    : domains[0]?.code;
+  form.elements.domain.replaceChildren(...domains.map((domain) => new Option(domain.name, domain.code)));
+  if (selectedDomain) form.elements.domain.value = selectedDomain;
+  syncAwakeningBaselineForm();
+
+  const list = $("#awakening-baselines");
+  const records = awakening.baselines || [];
+  const rows = domains.map((domain) => {
+    const item = document.createElement("li");
+    item.className = "baseline-domain-item";
+    const title = document.createElement("strong");
+    title.textContent = domain.name;
+    const domainRecords = records.filter((record) => record.domain === domain.code);
+    const detail = document.createElement("small");
+    detail.textContent = domainRecords.length
+      ? `${domainRecords.length} starting point${domainRecords.length === 1 ? "" : "s"} saved`
+      : "No starting point recorded yet";
+    item.append(title, detail);
+
+    const history = document.createElement("ul");
+    history.className = "baseline-history";
+    for (const record of domainRecords) {
+      const entry = document.createElement("li");
+      const summary = document.createElement("span");
+      summary.textContent = record.status === "unknown"
+        ? `${record.metric_name}: Unknown`
+        : `${record.metric_name}: ${record.value} ${record.unit}`;
+      const meta = document.createElement("small");
+      const measured = record.measured_on ? `Measured ${record.measured_on}` : "Measurement date not provided";
+      meta.textContent = `${measured} · ${record.confidence}% confidence · entered ${new Date(record.recorded_at).toLocaleDateString()}`;
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "text-button";
+      remove.textContent = "Delete entry";
+      remove.addEventListener("click", async () => {
+        if (!window.confirm("Delete this starting point from your history? This cannot be undone.")) return;
+        const stepIndex = awakeningStepIndex;
+        try {
+          await api(`/api/v1/onboarding/awakening/baselines/${record.id}`, { method: "DELETE" });
+          await loadWorkspace();
+          renderAwakening(awakeningData, stepIndex);
+          showNotice("Starting point deleted.");
+        } catch (error) {
+          showNotice(error.message);
+        }
+      });
+      entry.append(summary, meta, remove);
+      history.append(entry);
+    }
+    if (domainRecords.length) item.append(history);
+
+    const overall = domainRecords
+      .filter((record) => record.metric_name === "Overall baseline")
+      .at(-1);
+    if (overall?.status !== "unknown") {
+      const markUnknown = document.createElement("button");
+      markUnknown.type = "button";
+      markUnknown.className = "quiet baseline-unknown";
+      markUnknown.textContent = "Mark overall baseline unknown";
+      markUnknown.disabled = !awakening.baseline_storage_consent;
+      markUnknown.addEventListener("click", async () => {
+        const stepIndex = awakeningStepIndex;
+        try {
+          await api("/api/v1/onboarding/awakening/baselines", {
+            method: "POST",
+            body: JSON.stringify({
+              domain: domain.code,
+              metric_name: "Overall baseline",
+              status: "unknown",
+              confidence: 50,
+            }),
+          });
+          await loadWorkspace();
+          renderAwakening(awakeningData, stepIndex);
+          showNotice(`${domain.name} marked unknown. You can add a value later.`);
+        } catch (error) {
+          showNotice(error.message);
+        }
+      });
+      item.append(markUnknown);
+    }
+    return item;
+  });
+  if (!rows.length) {
+    const empty = document.createElement("li");
+    empty.textContent = "No active life areas are available for this assessment day.";
+    rows.push(empty);
+  }
+  list.replaceChildren(...rows);
 }
 
 function renderCampaigns(campaigns) {
@@ -1042,6 +1174,62 @@ $("#awakening-consent").addEventListener("change", async (event) => {
       : "New Awakening answers will not be saved. Existing answers remain until deleted.");
   } catch (error) {
     checkbox.checked = !checkbox.checked;
+    showNotice(error.message);
+  }
+});
+
+$("#awakening-baseline-consent").addEventListener("change", async (event) => {
+  const checkbox = event.currentTarget;
+  const granted = checkbox.checked;
+  try {
+    await api("/api/v1/consents", {
+      method: "POST",
+      body: JSON.stringify({
+        purpose: "assessment_baseline_storage",
+        granted,
+        policy_version: "v1",
+      }),
+    });
+    awakeningData.baseline_storage_consent = granted;
+    renderAwakeningBaselines(awakeningData, awakeningData.steps[awakeningStepIndex]);
+    showNotice(granted
+      ? "Baseline storage is on for this local account."
+      : "New starting points will not be saved. Existing entries remain until deleted.");
+  } catch (error) {
+    checkbox.checked = !granted;
+    showNotice(error.message);
+  }
+});
+
+$("#awakening-baseline-form").elements.status.addEventListener("change", syncAwakeningBaselineForm);
+
+$("#awakening-baseline-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const status = form.elements.status.value;
+  const payload = {
+    domain: form.elements.domain.value,
+    metric_name: form.elements.metric_name.value.trim(),
+    status,
+    confidence: Number(form.elements.confidence.value) || 0,
+  };
+  if (status === "recorded") {
+    payload.value = form.elements.value.value;
+    payload.unit = form.elements.unit.value.trim();
+    if (form.elements.measured_on.value) payload.measured_on = form.elements.measured_on.value;
+  }
+  const stepIndex = awakeningStepIndex;
+  try {
+    await api("/api/v1/onboarding/awakening/baselines", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    form.reset();
+    form.elements.confidence.value = "50";
+    await loadWorkspace();
+    renderAwakening(awakeningData, stepIndex);
+    showNotice("Starting point saved. Earlier entries remain in the history.");
+  } catch (error) {
     showNotice(error.message);
   }
 });

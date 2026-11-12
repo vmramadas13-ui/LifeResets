@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from liferesets.database import get_db
+from liferesets.domain_data import DomainCode
 from liferesets.models import (
     AuditEvent,
+    AwakeningBaseline,
     Campaign,
     ConsentRecord,
     OnboardingStep,
@@ -32,6 +35,44 @@ class OnboardingUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     status: StepStatus
     answer: str | None = Field(default=None, max_length=1200)
+
+
+class AwakeningBaselineInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    domain: DomainCode
+    metric_name: str = Field(min_length=1, max_length=120)
+    status: Literal["recorded", "unknown"]
+    value: Decimal | None = Field(
+        default=None, max_digits=16, decimal_places=4, allow_inf_nan=False
+    )
+    unit: str | None = Field(default=None, max_length=40)
+    measured_on: date | None = None
+    confidence: int = Field(default=50, ge=0, le=100)
+
+    @field_validator("metric_name")
+    @classmethod
+    def trim_metric_name(cls, value: str) -> str:
+        trimmed = value.strip()
+        if not trimmed:
+            raise ValueError("metric_name cannot be blank")
+        return trimmed
+
+    @field_validator("unit")
+    @classmethod
+    def trim_unit(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        trimmed = value.strip()
+        return trimmed or None
+
+    @model_validator(mode="after")
+    def valid_value_for_status(self) -> AwakeningBaselineInput:
+        if self.status == "recorded" and (self.value is None or self.unit is None):
+            raise ValueError("A numeric baseline requires both a value and a unit")
+        if self.status == "unknown" and self.value is not None:
+            raise ValueError("An unknown baseline cannot include a numeric value")
+        return self
 
 
 AWAKENING_PROMPTS = (
@@ -163,6 +204,20 @@ def _review_payload(review: Review) -> dict[str, object]:
     }
 
 
+def _baseline_payload(item: AwakeningBaseline) -> dict[str, object]:
+    return {
+        "id": str(item.id),
+        "domain": item.domain,
+        "metric_name": item.metric_name,
+        "status": item.status,
+        "value": str(item.value) if item.value is not None else None,
+        "unit": item.unit,
+        "measured_on": item.measured_on.isoformat() if item.measured_on else None,
+        "confidence": item.confidence,
+        "recorded_at": item.recorded_at.isoformat(),
+    }
+
+
 @router.get("/onboarding/awakening")
 def get_awakening(
     auth: Authenticated, db: Session = Depends(get_db)
@@ -174,6 +229,11 @@ def get_awakening(
             select(OnboardingStep).where(OnboardingStep.user_id == auth.user.id)
         ).all()
     }
+    baselines = db.scalars(
+        select(AwakeningBaseline)
+        .where(AwakeningBaseline.user_id == auth.user.id)
+        .order_by(AwakeningBaseline.recorded_at, AwakeningBaseline.id)
+    ).all()
     steps = [
         {
             "step": number,
@@ -189,7 +249,66 @@ def get_awakening(
         "steps": steps,
         "completed": sum(item["status"] == "completed" for item in steps),
         "storage_consent": _consent_active(db, auth.user.id, "awakening_storage"),
+        "baseline_storage_consent": _consent_active(
+            db, auth.user.id, "assessment_baseline_storage"
+        ),
+        "baselines": [_baseline_payload(item) for item in baselines],
     }
+
+
+@router.post("/onboarding/awakening/baselines", status_code=201)
+def create_awakening_baseline(
+    request: AwakeningBaselineInput,
+    auth: AuthenticatedWithCsrf,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    """Append an explicitly consented numeric baseline or unknown marker."""
+    if not _consent_active(db, auth.user.id, "assessment_baseline_storage"):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "baseline_consent_required",
+                "message": (
+                    "Grant assessment_baseline_storage consent before saving baselines."
+                ),
+            },
+        )
+    baseline = AwakeningBaseline(
+        user_id=auth.user.id,
+        domain=request.domain,
+        metric_name=request.metric_name,
+        status=request.status,
+        value=request.value,
+        unit=request.unit,
+        measured_on=request.measured_on,
+        confidence=request.confidence,
+    )
+    db.add(baseline)
+    _audit(db, auth.user, "onboarding.baseline_recorded")
+    db.commit()
+    db.refresh(baseline)
+    return _baseline_payload(baseline)
+
+
+@router.delete("/onboarding/awakening/baselines/{baseline_id}")
+def delete_awakening_baseline(
+    baseline_id: UUID,
+    auth: AuthenticatedWithCsrf,
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    """Delete one baseline history entry owned by the signed-in account."""
+    baseline = db.scalar(
+        select(AwakeningBaseline).where(
+            AwakeningBaseline.id == baseline_id,
+            AwakeningBaseline.user_id == auth.user.id,
+        )
+    )
+    if baseline is None:
+        raise HTTPException(status_code=404, detail="Baseline not found")
+    db.delete(baseline)
+    _audit(db, auth.user, "onboarding.baseline_deleted")
+    db.commit()
+    return {"status": "deleted"}
 
 
 @router.patch("/onboarding/awakening/{step_number}")
@@ -429,6 +548,11 @@ def export_lifecycle_data(
         select(OnboardingStep).where(OnboardingStep.user_id == user_id)
     ).all()
     reviews = db.scalars(select(Review).where(Review.user_id == user_id)).all()
+    baselines = db.scalars(
+        select(AwakeningBaseline)
+        .where(AwakeningBaseline.user_id == user_id)
+        .order_by(AwakeningBaseline.recorded_at, AwakeningBaseline.id)
+    ).all()
     return {
         "campaigns": [
             {
@@ -450,5 +574,6 @@ def export_lifecycle_data(
             }
             for item in steps
         ],
+        "awakening_baselines": [_baseline_payload(item) for item in baselines],
         "reviews": [_review_payload(item) for item in reviews],
     }

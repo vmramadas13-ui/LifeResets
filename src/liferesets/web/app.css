@@ -153,6 +153,16 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .record-list li:first-child { border-top: 0; }
 .record-list strong, .record-list small { display: block; }
 .record-list small { margin-top: 4px; color: var(--muted); }
+.baseline-panel { margin-top: 20px; padding-top: 18px; border-top: 2px solid var(--line); }
+.baseline-panel h3 { margin-bottom: 8px; }
+.baseline-domain-item { display: grid; gap: 8px; }
+.baseline-history { margin: 0 0 0 12px; padding: 0; list-style: none; }
+.baseline-history li { display: grid; gap: 4px; padding: 8px 0; border-top: 1px solid var(--line); }
+.baseline-history .text-button { justify-self: start; min-height: 36px; }
+.baseline-unknown { justify-self: start; }
+#awakening-baseline-form { margin-top: 16px; }
+#awakening-baseline-value-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
+#awakening-baseline-value-fields[hidden] { display: none; }
 details { margin-top: 16px; padding-top: 14px; border-top: 2px solid var(--line); }
 summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-weight: 850; }
 details form { margin-top: 15px; }
@@ -358,6 +368,7 @@ section[id] { scroll-margin-top: 18px; }
   .habit-check-in-form { grid-template-columns: 1fr; }
   .habit-check-in-form label:nth-child(2), .habit-check-in-actions { grid-column: auto; }
   .habit-check-in-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  #awakening-baseline-value-fields { grid-template-columns: 1fr; }
   .saved-plan-item, .recovery-list li { align-items: flex-start; flex-direction: column; }
   .item-actions { width: 100%; justify-content: flex-start; }
   .defer-control { flex: 1 1 100%; }

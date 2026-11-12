@@ -75,6 +75,9 @@ class User(Base):
     onboarding_steps: Mapped[list[OnboardingStep]] = relationship(
         back_populates="user", cascade="all, delete-orphan", passive_deletes=True
     )
+    awakening_baselines: Mapped[list[AwakeningBaseline]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", passive_deletes=True
+    )
     reviews: Mapped[list[Review]] = relationship(
         back_populates="user", cascade="all, delete-orphan", passive_deletes=True
     )
@@ -449,6 +452,48 @@ class OnboardingStep(Base):
     )
 
     user: Mapped[User] = relationship(back_populates="onboarding_steps")
+
+
+class AwakeningBaseline(Base):
+    """Append-only, user-entered numeric baseline or explicit unknown marker."""
+
+    __tablename__ = "awakening_baselines"
+    __table_args__ = (
+        CheckConstraint(
+            "domain IN ('career','fitness','finance','discipline','learning',"
+            "'mental_wellness','relationships','lifestyle')",
+            name="valid_awakening_baseline_domain",
+        ),
+        CheckConstraint(
+            "status IN ('recorded','unknown')",
+            name="valid_awakening_baseline_status",
+        ),
+        CheckConstraint(
+            "(status = 'recorded' AND value IS NOT NULL AND unit IS NOT NULL) OR "
+            "(status = 'unknown' AND value IS NULL)",
+            name="valid_awakening_baseline_value",
+        ),
+        CheckConstraint(
+            "confidence BETWEEN 0 AND 100", name="valid_baseline_confidence"
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    domain: Mapped[str] = mapped_column(String(32), nullable=False)
+    metric_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    status: Mapped[str] = mapped_column(String(12), nullable=False)
+    value: Mapped[Decimal | None] = mapped_column(Numeric(16, 4), nullable=True)
+    unit: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    measured_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    confidence: Mapped[int] = mapped_column(Integer, default=50, nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+    user: Mapped[User] = relationship(back_populates="awakening_baselines")
 
 
 class Campaign(Base):

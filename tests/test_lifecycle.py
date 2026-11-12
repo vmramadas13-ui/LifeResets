@@ -1,9 +1,10 @@
 from datetime import date
+from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from liferesets.models import Campaign, Review, User
+from liferesets.models import AwakeningBaseline, Campaign, Review, User
 
 
 def _login(client, test_user: dict[str, object]) -> None:
@@ -28,6 +29,18 @@ def _record_awakening_consent(client, granted: bool = True) -> None:
         "/api/v1/consents",
         json={
             "purpose": "awakening_storage",
+            "granted": granted,
+            "policy_version": "v1",
+        },
+    )
+    assert response.status_code == 201
+
+
+def _record_baseline_consent(client, granted: bool = True) -> None:
+    response = client.post(
+        "/api/v1/consents",
+        json={
+            "purpose": "assessment_baseline_storage",
             "granted": granted,
             "policy_version": "v1",
         },
@@ -116,6 +129,112 @@ def test_awakening_withdrawal_blocks_answer_updates_and_delete_clears_answers(
     )
 
 
+def test_awakening_baselines_are_consent_gated_explicit_and_append_only(
+    client, test_user
+) -> None:
+    _login(client, test_user)
+    initial = client.get("/api/v1/onboarding/awakening").json()
+    assert initial["baseline_storage_consent"] is False
+    assert initial["baselines"] == []
+    denied = client.post(
+        "/api/v1/onboarding/awakening/baselines",
+        json={
+            "domain": "learning",
+            "metric_name": "Study hours",
+            "status": "recorded",
+            "value": 3,
+            "unit": "hours",
+        },
+    )
+    assert denied.status_code == 403
+
+    _record_baseline_consent(client)
+    first = client.post(
+        "/api/v1/onboarding/awakening/baselines",
+        json={
+            "domain": "learning",
+            "metric_name": "Weekly study hours",
+            "status": "recorded",
+            "value": 3,
+            "unit": "hours",
+            "measured_on": "2026-11-10",
+            "confidence": 60,
+        },
+    )
+    assert first.status_code == 201, first.text
+    revised = client.post(
+        "/api/v1/onboarding/awakening/baselines",
+        json={
+            "domain": "learning",
+            "metric_name": "Weekly study hours",
+            "status": "recorded",
+            "value": 4,
+            "unit": "hours",
+            "confidence": 75,
+        },
+    )
+    assert revised.status_code == 201, revised.text
+    unknown = client.post(
+        "/api/v1/onboarding/awakening/baselines",
+        json={
+            "domain": "finance",
+            "metric_name": "Overall baseline",
+            "status": "unknown",
+            "confidence": 50,
+        },
+    )
+    assert unknown.status_code == 201, unknown.text
+    entries = client.get("/api/v1/onboarding/awakening").json()["baselines"]
+    assert [item["value"] for item in entries[:2]] == ["3.0000", "4.0000"]
+    assert entries[0]["recorded_at"] < entries[1]["recorded_at"]
+    assert entries[2]["status"] == "unknown"
+    assert entries[2]["value"] is None
+    exported = client.get("/api/v1/export").json()["lifecycle_data"][
+        "awakening_baselines"
+    ]
+    assert len(exported) == 3
+
+    _record_baseline_consent(client, granted=False)
+    blocked = client.post(
+        "/api/v1/onboarding/awakening/baselines",
+        json={
+            "domain": "learning",
+            "metric_name": "Weekly study hours",
+            "status": "recorded",
+            "value": 5,
+            "unit": "hours",
+        },
+    )
+    assert blocked.status_code == 403
+    deleted = client.delete(
+        f"/api/v1/onboarding/awakening/baselines/{first.json()['id']}"
+    )
+    assert deleted.status_code == 200
+    assert len(client.get("/api/v1/onboarding/awakening").json()["baselines"]) == 2
+
+
+def test_awakening_baseline_requires_value_and_unit_for_recorded_entries(
+    client, test_user
+) -> None:
+    _login(client, test_user)
+    _record_baseline_consent(client)
+    missing = client.post(
+        "/api/v1/onboarding/awakening/baselines",
+        json={"domain": "fitness", "metric_name": "Activity", "status": "recorded"},
+    )
+    assert missing.status_code == 422
+    value_on_unknown = client.post(
+        "/api/v1/onboarding/awakening/baselines",
+        json={
+            "domain": "finance",
+            "metric_name": "Overall baseline",
+            "status": "unknown",
+            "value": 10,
+        },
+    )
+    assert value_on_unknown.status_code == 422
+
+
 def test_awakening_answer_length_and_step_bounds(client, test_user) -> None:
     _login(client, test_user)
     invalid_step = client.patch(
@@ -165,7 +284,16 @@ def test_campaign_is_90_days_and_owned(client, test_user, db_session: Session) -
         period_end=date(2026, 1, 7),
         responses={"wins": "Private reflection"},
     )
-    db_session.add_all([foreign, foreign_review])
+    foreign_baseline = AwakeningBaseline(
+        user_id=other_id,
+        domain="fitness",
+        metric_name="Private measure",
+        status="recorded",
+        value=Decimal("2"),
+        unit="sessions",
+        confidence=50,
+    )
+    db_session.add_all([foreign, foreign_review, foreign_baseline])
     db_session.commit()
     assert (
         client.patch(
@@ -175,6 +303,12 @@ def test_campaign_is_90_days_and_owned(client, test_user, db_session: Session) -
     )
     assert (
         client.delete(f"/api/v1/reviews/{foreign_review.id}/responses").status_code
+        == 404
+    )
+    assert (
+        client.delete(
+            f"/api/v1/onboarding/awakening/baselines/{foreign_baseline.id}"
+        ).status_code
         == 404
     )
 
