@@ -38,7 +38,7 @@ def test_migration_upgrade_and_rollback(tmp_path: Path, monkeypatch) -> None:
             revision = connection.execute(
                 text("SELECT version_num FROM alembic_version")
             ).scalar_one()
-        assert revision == "c7f1d6b9a240"
+        assert revision == "9a42e6b1c8d0"
         assert {
             "users",
             "profiles",
@@ -67,6 +67,7 @@ def test_migration_upgrade_and_rollback(tmp_path: Path, monkeypatch) -> None:
             "awakening_baseline_goal_links",
             "awakening_assessments",
             "domain_subareas",
+            "daily_plan_busy_windows",
         }.issubset(inspect(engine).get_table_names())
         assert "answer" in {
             column["name"] for column in inspect(engine).get_columns("onboarding_steps")
@@ -84,6 +85,9 @@ def test_migration_upgrade_and_rollback(tmp_path: Path, monkeypatch) -> None:
         assert "subarea_id" in {
             column["name"] for column in inspect(engine).get_columns("goals")
         }
+        assert {"day_start_time", "day_end_time"}.issubset(
+            {column["name"] for column in inspect(engine).get_columns("daily_plans")}
+        )
 
         command.downgrade(config, "base")
         assert not {
@@ -114,6 +118,7 @@ def test_migration_upgrade_and_rollback(tmp_path: Path, monkeypatch) -> None:
             "awakening_baseline_goal_links",
             "awakening_assessments",
             "domain_subareas",
+            "daily_plan_busy_windows",
         }.intersection(inspect(engine).get_table_names())
         with engine.connect() as connection:
             revision = connection.execute(

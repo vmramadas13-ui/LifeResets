@@ -102,6 +102,8 @@ def test_plan_saves_capacity_energy_and_user_task_decisions(
     response = client.get("/api/v1/export")
     exported = response.json()["daily_plans"]
     assert exported[0]["plan_date"] == "2026-11-11"
+    assert exported[0]["day_start_time"] == "09:00"
+    assert exported[0]["day_end_time"] == "21:00"
     assert [item["status"] for item in exported[0]["items"]] == [
         "completed",
         "deferred",
@@ -217,6 +219,75 @@ def test_reactivating_a_dropped_item_cannot_exceed_capacity(client, test_user) -
         json={"status": "planned"},
     )
     assert too_much.status_code == 422
+
+
+def test_daily_plan_suggests_action_times_around_private_busy_windows(
+    client, test_user
+) -> None:
+    _login(client, test_user)
+    task_a = _create_task(client, "Review a lesson")
+    task_b = _create_task(client, "Prepare lunch")
+    task_c = _create_task(client, "Take a walk")
+
+    saved = client.put(
+        "/api/v1/daily-plans/2026-11-13",
+        json={
+            "capacity_minutes": 105,
+            "energy": "medium",
+            "day_start_time": "08:30",
+            "day_end_time": "12:00",
+            "busy_windows": [
+                {"start_time": "10:30", "end_time": "11:15"},
+                {"start_time": "09:00", "end_time": "09:30"},
+            ],
+            "items": [
+                {"task_id": task_a["id"], "planned_minutes": 30},
+                {"task_id": task_b["id"], "planned_minutes": 45},
+                {"task_id": task_c["id"], "planned_minutes": 30},
+            ],
+        },
+    )
+
+    assert saved.status_code == 200, saved.text
+    plan = saved.json()
+    assert plan["busy_windows"] == [
+        {"start_time": "09:00", "end_time": "09:30"},
+        {"start_time": "10:30", "end_time": "11:15"},
+    ]
+    assert [
+        (item["suggested_start"], item["suggested_end"]) for item in plan["items"]
+    ] == [("08:30", "09:00"), ("09:30", "10:15"), ("11:15", "11:45")]
+    reloaded = client.get("/api/v1/daily-plans/2026-11-13").json()
+    assert reloaded["busy_windows"] == plan["busy_windows"]
+    exported = client.get("/api/v1/export").json()["daily_plans"]
+    assert exported[0]["items"][2]["suggested_start"] == "11:15"
+
+    overlap = client.put(
+        "/api/v1/daily-plans/2026-11-14",
+        json={
+            "capacity_minutes": 60,
+            "energy": "low",
+            "day_start_time": "09:00",
+            "day_end_time": "17:00",
+            "busy_windows": [
+                {"start_time": "10:00", "end_time": "11:00"},
+                {"start_time": "10:30", "end_time": "11:30"},
+            ],
+        },
+    )
+    assert overlap.status_code == 422
+
+    outside_day = client.put(
+        "/api/v1/daily-plans/2026-11-14",
+        json={
+            "capacity_minutes": 60,
+            "energy": "low",
+            "day_start_time": "09:00",
+            "day_end_time": "17:00",
+            "busy_windows": [{"start_time": "08:00", "end_time": "09:30"}],
+        },
+    )
+    assert outside_day.status_code == 422
 
 
 def test_recovery_is_a_preview_and_never_carries_tasks_forward_automatically(

@@ -240,6 +240,13 @@ details form { margin-top: 15px; }
 .plan-controls { display: grid; grid-template-columns: 1fr 1fr 1.2fr; gap: 13px; max-width: none; }
 .plan-controls label { align-content: start; }
 .plan-controls .field-hint { margin-top: -3px; font-size: .77rem; font-weight: 550; }
+.schedule-context { margin-top: 16px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); }
+.schedule-context > .hint { margin: 4px 0 12px; }
+.schedule-hours { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; max-width: 620px; }
+.busy-window-list { display: grid; gap: 8px; margin: 10px 0; }
+.busy-window-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)) auto; gap: 10px; align-items: end; max-width: 720px; }
+.busy-window-row .text-button { min-height: 44px; }
+.schedule-context > button { min-height: 44px; }
 .plan-summary { display: grid; grid-template-columns: minmax(140px, .45fr) minmax(150px, 1fr); align-items: center; gap: 5px 18px; margin: 21px 0 25px; padding: 16px 18px; border: 2px solid var(--ink); border-radius: 15px; background: var(--paper); }
 .plan-summary .eyebrow { margin-bottom: 3px; }
 .plan-summary strong { display: block; font-size: 1.08rem; }
@@ -273,6 +280,7 @@ details form { margin-top: 15px; }
 .task-create-form { max-width: none; grid-template-columns: minmax(200px, 1.5fr) minmax(160px, .8fr) minmax(190px, 1fr) auto; align-items: end; }
 .task-create-form button { min-height: 48px; }
 .saved-plan { margin-top: 25px; padding-top: 22px; border-top: 2px solid var(--line); }
+.saved-plan > .hint { margin: 5px 0 10px; }
 .saved-plan-list, .recovery-list { display: grid; gap: 10px; margin: 12px 0 0; padding: 0; list-style: none; }
 .saved-plan-item, .recovery-list li { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 14px; border: 2px solid var(--ink); border-radius: 15px; background: var(--surface); }
 .saved-plan-item.status-completed { border-left-width: 8px; border-left-color: var(--sky); }
@@ -372,6 +380,8 @@ section[id] { scroll-margin-top: 18px; }
   .recovery-badge { font-size: .74rem; }
   .plan-controls { grid-template-columns: 1fr; }
   .plan-controls label:last-child { grid-column: auto; }
+  .busy-window-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .busy-window-row .text-button { grid-column: 1 / -1; justify-self: start; }
   .plan-summary { grid-template-columns: 1fr; gap: 10px; margin: 16px 0 22px; padding: 13px; }
   .plan-summary .hint { grid-column: 1; }
   .task-options { grid-template-columns: 1fr; }

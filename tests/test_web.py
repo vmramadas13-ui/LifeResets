@@ -11,6 +11,11 @@ def test_web_shell_and_pwa_files_are_served() -> None:
         assert page.status_code == 200
         assert "LifeResets" in page.text
         assert 'id="daily-plan-form"' in page.text
+        assert 'id="schedule-context"' in page.text
+        assert 'id="busy-window-list"' in page.text
+        assert 'id="day-start-time"' in page.text
+        assert 'id="day-end-time"' in page.text
+        assert "Add a busy time" in page.text
         assert 'id="task-options"' in page.text
         assert 'id="recovery-list"' in page.text
         assert 'id="theme-toggle"' in page.text
@@ -40,6 +45,8 @@ def test_web_shell_and_pwa_files_are_served() -> None:
         assert 'editGoalSummary.textContent = "Edit goal"' in app_script.text
         assert 'editMetricSummary.textContent = "Edit measure"' in app_script.text
         assert 'method: "PATCH"' in app_script.text
+        assert "suggested ${planItem.suggested_start}" in app_script.text
+        assert "leave busy times clear" in app_script.text
         assert "unit is locked to keep its history accurate" in app_script.text
         assert "Dated history remains unchanged." in app_script.text
         assert "Turn next step into a task" in app_script.text

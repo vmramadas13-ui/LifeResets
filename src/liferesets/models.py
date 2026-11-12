@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from typing import Any
 
@@ -19,6 +19,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    Time,
     UniqueConstraint,
     Uuid,
     func,
@@ -711,6 +712,8 @@ class DailyPlan(Base):
     plan_date: Mapped[date] = mapped_column(Date, nullable=False)
     capacity_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
     energy: Mapped[str] = mapped_column(String(8), nullable=False)
+    day_start_time: Mapped[time] = mapped_column(Time, default=time(9), nullable=False)
+    day_end_time: Mapped[time] = mapped_column(Time, default=time(21), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, nullable=False
     )
@@ -725,6 +728,32 @@ class DailyPlan(Base):
         passive_deletes=True,
         order_by="DailyPlanItem.position",
     )
+    busy_windows: Mapped[list[DailyPlanBusyWindow]] = relationship(
+        back_populates="plan",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="DailyPlanBusyWindow.position",
+    )
+
+
+class DailyPlanBusyWindow(Base):
+    """A user-entered unavailable time range used for local schedule suggestions."""
+
+    __tablename__ = "daily_plan_busy_windows"
+    __table_args__ = (
+        UniqueConstraint("plan_id", "position", name="unique_plan_busy_position"),
+        CheckConstraint("start_time < end_time", name="valid_busy_window_range"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    plan_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("daily_plans.id", ondelete="CASCADE"), index=True
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    start_time: Mapped[time] = mapped_column(Time, nullable=False)
+    end_time: Mapped[time] = mapped_column(Time, nullable=False)
+
+    plan: Mapped[DailyPlan] = relationship(back_populates="busy_windows")
 
 
 class DailyPlanItem(Base):

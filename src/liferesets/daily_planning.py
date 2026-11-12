@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Literal
 from uuid import UUID
 
@@ -12,7 +12,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from liferesets.database import get_db
-from liferesets.models import AuditEvent, DailyPlan, DailyPlanItem, Task, User
+from liferesets.models import (
+    AuditEvent,
+    DailyPlan,
+    DailyPlanBusyWindow,
+    DailyPlanItem,
+    Task,
+    User,
+)
 from liferesets.progression import record_task_transition
 from liferesets.security import Authenticated, AuthenticatedWithCsrf
 
@@ -25,11 +32,31 @@ class PlannedTaskInput(BaseModel):
     planned_minutes: int = Field(ge=1, le=1440)
 
 
+class BusyWindowInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    start_time: time
+    end_time: time
+
+    @model_validator(mode="after")
+    def valid_window(self) -> BusyWindowInput:
+        if (
+            self.start_time.utcoffset() is not None
+            or self.end_time.utcoffset() is not None
+        ):
+            raise ValueError("Busy windows use local times without a timezone")
+        if self.end_time <= self.start_time:
+            raise ValueError("Busy window end must be after its start")
+        return self
+
+
 class DailyPlanInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     capacity_minutes: int = Field(ge=1, le=1440)
     energy: Literal["low", "medium", "high"]
     items: list[PlannedTaskInput] = Field(default_factory=list, max_length=20)
+    day_start_time: time = time(9)
+    day_end_time: time = time(21)
+    busy_windows: list[BusyWindowInput] = Field(default_factory=list, max_length=12)
 
     @model_validator(mode="after")
     def enforce_unique_tasks_and_capacity(self) -> DailyPlanInput:
@@ -38,6 +65,23 @@ class DailyPlanInput(BaseModel):
             raise ValueError("Each task can appear only once in a daily plan")
         if sum(item.planned_minutes for item in self.items) > self.capacity_minutes:
             raise ValueError("Planned minutes cannot exceed daily capacity")
+        if (
+            self.day_start_time.utcoffset() is not None
+            or self.day_end_time.utcoffset() is not None
+        ):
+            raise ValueError("Planning hours use local times without a timezone")
+        if self.day_end_time <= self.day_start_time:
+            raise ValueError("Day end must be after day start")
+        previous_end: time | None = None
+        for window in sorted(self.busy_windows, key=lambda item: item.start_time):
+            if (
+                window.start_time < self.day_start_time
+                or window.end_time > self.day_end_time
+            ):
+                raise ValueError("Busy windows must fit within the planning day")
+            if previous_end is not None and window.start_time < previous_end:
+                raise ValueError("Busy windows cannot overlap")
+            previous_end = window.end_time
         return self
 
 
@@ -85,20 +129,74 @@ def _item_payload(item: DailyPlanItem) -> dict[str, object]:
     }
 
 
+def _suggested_time_blocks(
+    plan: DailyPlan, items: list[DailyPlanItem]
+) -> dict[UUID, tuple[str | None, str | None]]:
+    planning_day = date(2000, 1, 1)
+    cursor = datetime.combine(planning_day, plan.day_start_time)
+    day_end = datetime.combine(planning_day, plan.day_end_time)
+    busy_windows = sorted(plan.busy_windows, key=lambda item: item.start_time)
+    suggestions: dict[UUID, tuple[str | None, str | None]] = {}
+    for item in items:
+        if item.status != "planned":
+            continue
+        candidate = cursor
+        duration = timedelta(minutes=item.planned_minutes)
+        while candidate + duration <= day_end:
+            proposed_end = candidate + duration
+            overlap = next(
+                (
+                    window
+                    for window in busy_windows
+                    if candidate.time() < window.end_time
+                    and proposed_end.time() > window.start_time
+                ),
+                None,
+            )
+            if overlap is None:
+                suggestions[item.id] = (
+                    candidate.time().isoformat(timespec="minutes"),
+                    proposed_end.time().isoformat(timespec="minutes"),
+                )
+                cursor = proposed_end
+                break
+            candidate = datetime.combine(planning_day, overlap.end_time)
+        else:
+            suggestions[item.id] = (None, None)
+    return suggestions
+
+
 def _plan_payload(plan: DailyPlan) -> dict[str, object]:
     items = sorted(plan.items, key=lambda item: item.position)
+    suggested_times = _suggested_time_blocks(plan, items)
     return {
         "id": str(plan.id),
         "plan_date": plan.plan_date.isoformat(),
         "capacity_minutes": plan.capacity_minutes,
         "energy": plan.energy,
+        "day_start_time": plan.day_start_time.isoformat(timespec="minutes"),
+        "day_end_time": plan.day_end_time.isoformat(timespec="minutes"),
+        "busy_windows": [
+            {
+                "start_time": window.start_time.isoformat(timespec="minutes"),
+                "end_time": window.end_time.isoformat(timespec="minutes"),
+            }
+            for window in sorted(plan.busy_windows, key=lambda item: item.position)
+        ],
         "is_saved": True,
         "planned_minutes": sum(
             item.planned_minutes
             for item in items
             if item.status in {"planned", "completed"}
         ),
-        "items": [_item_payload(item) for item in items],
+        "items": [
+            {
+                **_item_payload(item),
+                "suggested_start": suggested_times.get(item.id, (None, None))[0],
+                "suggested_end": suggested_times.get(item.id, (None, None))[1],
+            }
+            for item in items
+        ],
     }
 
 
@@ -111,7 +209,10 @@ def get_daily_plan(
     plan = db.scalar(
         select(DailyPlan)
         .where(DailyPlan.user_id == auth.user.id, DailyPlan.plan_date == plan_date)
-        .options(selectinload(DailyPlan.items).selectinload(DailyPlanItem.task))
+        .options(
+            selectinload(DailyPlan.items).selectinload(DailyPlanItem.task),
+            selectinload(DailyPlan.busy_windows),
+        )
     )
     if plan is None:
         return {
@@ -119,6 +220,9 @@ def get_daily_plan(
             "plan_date": plan_date.isoformat(),
             "capacity_minutes": 120,
             "energy": "medium",
+            "day_start_time": "09:00",
+            "day_end_time": "21:00",
+            "busy_windows": [],
             "planned_minutes": 0,
             "items": [],
             "is_saved": False,
@@ -137,7 +241,10 @@ def save_daily_plan(
     plan = db.scalar(
         select(DailyPlan)
         .where(DailyPlan.user_id == auth.user.id, DailyPlan.plan_date == plan_date)
-        .options(selectinload(DailyPlan.items).selectinload(DailyPlanItem.task))
+        .options(
+            selectinload(DailyPlan.items).selectinload(DailyPlanItem.task),
+            selectinload(DailyPlan.busy_windows),
+        )
     )
     if plan is None:
         plan = DailyPlan(
@@ -145,12 +252,27 @@ def save_daily_plan(
             plan_date=plan_date,
             capacity_minutes=request.capacity_minutes,
             energy=request.energy,
+            day_start_time=request.day_start_time,
+            day_end_time=request.day_end_time,
         )
         db.add(plan)
         db.flush()
     else:
         plan.capacity_minutes = request.capacity_minutes
         plan.energy = request.energy
+        plan.day_start_time = request.day_start_time
+        plan.day_end_time = request.day_end_time
+
+    plan.busy_windows = [
+        DailyPlanBusyWindow(
+            position=position,
+            start_time=window.start_time,
+            end_time=window.end_time,
+        )
+        for position, window in enumerate(
+            sorted(request.busy_windows, key=lambda item: item.start_time)
+        )
+    ]
 
     task_ids = [item.task_id for item in request.items]
     tasks = (
@@ -236,7 +358,10 @@ def save_daily_plan(
     plan = db.scalar(
         select(DailyPlan)
         .where(DailyPlan.id == plan.id, DailyPlan.user_id == auth.user.id)
-        .options(selectinload(DailyPlan.items).selectinload(DailyPlanItem.task))
+        .options(
+            selectinload(DailyPlan.items).selectinload(DailyPlanItem.task),
+            selectinload(DailyPlan.busy_windows),
+        )
     )
     assert plan is not None
     return _plan_payload(plan)
@@ -391,7 +516,10 @@ def export_daily_plans(db: Session, user_id: UUID) -> list[dict[str, object]]:
     plans = db.scalars(
         select(DailyPlan)
         .where(DailyPlan.user_id == user_id)
-        .options(selectinload(DailyPlan.items).selectinload(DailyPlanItem.task))
+        .options(
+            selectinload(DailyPlan.items).selectinload(DailyPlanItem.task),
+            selectinload(DailyPlan.busy_windows),
+        )
         .order_by(DailyPlan.plan_date)
     ).all()
     return [_plan_payload(plan) for plan in plans]

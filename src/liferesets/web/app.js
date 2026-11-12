@@ -948,8 +948,14 @@ function renderDailyPlan(plan) {
   $("#daily-plan-date").value = plan.plan_date;
   $("#plan-capacity").value = String(plan.capacity_minutes);
   $("#plan-energy").value = plan.energy;
+  $("#day-start-time").value = plan.day_start_time || "09:00";
+  $("#day-end-time").value = plan.day_end_time || "21:00";
+  renderBusyWindowEditor(plan.busy_windows || []);
   const energyLabels = { low: "Low energy", medium: "Steady energy", high: "High energy" };
   $("#plan-energy-label").textContent = energyLabels[plan.energy] || "Energy";
+  $("#time-block-summary").textContent = plan.is_saved
+    ? "Suggested times follow your chosen order and leave busy times clear. Adjust them whenever you need."
+    : "Save your choices to see suggested action times.";
   renderTaskPicker(plan);
   const rows = plan.items.map((planItem) => {
     const item = document.createElement("li");
@@ -963,7 +969,10 @@ function renderDailyPlan(plan) {
     const originalDue = planItem.due_date_at_planning && planItem.deferred_to && planItem.due_date_at_planning !== planItem.deferred_to
       ? ` · originally due ${planItem.due_date_at_planning}`
       : "";
-    meta.textContent = `${planItem.planned_minutes} min · ${statusLabels[planItem.status] || planItem.status}${planItem.deferred_to ? ` · ${planItem.deferred_to}` : ""}${originalDue}`;
+    const suggestedTime = planItem.suggested_start && planItem.suggested_end
+      ? ` · suggested ${planItem.suggested_start}–${planItem.suggested_end}`
+      : planItem.status === "planned" ? " · no open time slot fits" : "";
+    meta.textContent = `${planItem.planned_minutes} min · ${statusLabels[planItem.status] || planItem.status}${suggestedTime}${planItem.deferred_to ? ` · ${planItem.deferred_to}` : ""}${originalDue}`;
     copy.append(title, meta);
     item.append(copy);
     if (["planned", "deferred"].includes(planItem.status)) {
@@ -1005,6 +1014,38 @@ function renderDailyPlan(plan) {
   });
   $("#saved-plan-items").replaceChildren(...rows);
   $("#saved-plan-empty").hidden = rows.length > 0;
+}
+
+function createBusyWindowRow(window = {}) {
+  const row = document.createElement("div");
+  row.className = "busy-window-row";
+  for (const [caption, name, value] of [
+    ["Busy from", "start_time", window.start_time || ""],
+    ["Busy until", "end_time", window.end_time || ""],
+  ]) {
+    const label = document.createElement("label");
+    const text = document.createElement("span");
+    text.textContent = caption;
+    const input = document.createElement("input");
+    input.type = "time";
+    input.dataset.busyTime = name;
+    input.value = value;
+    input.required = true;
+    label.append(text, input);
+    row.append(label);
+  }
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "text-button";
+  remove.textContent = "Remove";
+  remove.setAttribute("aria-label", "Remove busy time");
+  remove.addEventListener("click", () => row.remove());
+  row.append(remove);
+  return row;
+}
+
+function renderBusyWindowEditor(windows) {
+  $("#busy-window-list").replaceChildren(...windows.map(createBusyWindowRow));
 }
 
 function makePlanItemButton(label, action, className = "quiet", context = "action") {
@@ -1941,6 +1982,12 @@ $("#daily-plan-form").addEventListener("submit", async (event) => {
   const payload = {
     capacity_minutes: Number($("#plan-capacity").value),
     energy: $("#plan-energy").value,
+    day_start_time: $("#day-start-time").value,
+    day_end_time: $("#day-end-time").value,
+    busy_windows: [...$("#busy-window-list").querySelectorAll(".busy-window-row")].map((row) => ({
+      start_time: row.querySelector('[data-busy-time="start_time"]').value,
+      end_time: row.querySelector('[data-busy-time="end_time"]').value,
+    })),
     items: selectedPlanItems(),
   };
   try {
@@ -1952,6 +1999,15 @@ $("#daily-plan-form").addEventListener("submit", async (event) => {
     renderRecovery(await api(`/api/v1/daily-plans/${saved.plan_date}/recovery`));
     showNotice("Your daily plan is saved.");
   } catch (error) { showNotice(error.message); }
+});
+
+$("#add-busy-window").addEventListener("click", () => {
+  const windows = $("#busy-window-list");
+  if (windows.children.length >= 12) {
+    showNotice("A daily plan can include up to 12 busy times.");
+    return;
+  }
+  windows.append(createBusyWindowRow());
 });
 
 $("#plan-capacity").addEventListener("input", updatePlanSummary);
