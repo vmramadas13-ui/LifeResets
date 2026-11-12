@@ -68,6 +68,9 @@ class User(Base):
     tasks: Mapped[list[Task]] = relationship(
         back_populates="user", cascade="all, delete-orphan", passive_deletes=True
     )
+    quests: Mapped[list[Quest]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", passive_deletes=True
+    )
     habits: Mapped[list[Habit]] = relationship(
         back_populates="user", cascade="all, delete-orphan", passive_deletes=True
     )
@@ -391,6 +394,66 @@ class TaskRescheduleEvent(Base):
     )
 
     task: Mapped[Task] = relationship(back_populates="reschedule_events")
+
+
+class Quest(Base):
+    """A user-owned sequence of tasks with lifecycle derived from its steps."""
+
+    __tablename__ = "quests"
+    __table_args__ = (
+        CheckConstraint("status IN ('active','archived')", name="valid_quest_status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    goal_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("goals.id", ondelete="SET NULL"), index=True, nullable=True
+    )
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(12), default="active", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+    user: Mapped[User] = relationship(back_populates="quests")
+    steps: Mapped[list[QuestStep]] = relationship(
+        back_populates="quest",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="QuestStep.position",
+    )
+
+
+class QuestStep(Base):
+    """An ordered quest step linked to an ordinary, plannable task."""
+
+    __tablename__ = "quest_steps"
+    __table_args__ = (
+        UniqueConstraint("quest_id", "position", name="unique_quest_step_position"),
+        UniqueConstraint("task_id", name="unique_quest_step_task"),
+        CheckConstraint("position >= 0", name="valid_quest_step_position"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    quest_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("quests.id", ondelete="CASCADE"), index=True
+    )
+    task_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("tasks.id", ondelete="CASCADE")
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+    quest: Mapped[Quest] = relationship(back_populates="steps")
+    task: Mapped[Task] = relationship()
 
 
 class Habit(Base):

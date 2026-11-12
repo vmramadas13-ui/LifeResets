@@ -153,6 +153,16 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .record-list li:first-child { border-top: 0; }
 .record-list strong, .record-list small { display: block; }
 .record-list small { margin-top: 4px; color: var(--muted); }
+.quest-card { display: grid; gap: 10px; }
+.quest-card > progress { width: 100%; height: 15px; accent-color: var(--sky); }
+.quest-card > .quest-progress-label { margin-top: 0; }
+.quest-steps { display: grid; gap: 9px; margin: 0; padding-left: 25px; }
+.quest-steps > li { padding: 5px 0; }
+.quest-step-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; align-items: center; }
+.quest-step-copy { display: grid; gap: 3px; }
+.quest-step-copy small { color: var(--muted); }
+.quest-step-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.quest-card > .item-actions { justify-content: flex-start; }
 .baseline-panel { margin-top: 20px; padding-top: 18px; border-top: 2px solid var(--line); }
 .baseline-panel h3 { margin-bottom: 8px; }
 .awakening-assessment-list details { margin-top: 0; padding: 12px 0; border-top: 1px solid var(--line); }
@@ -404,6 +414,8 @@ section[id] { scroll-margin-top: 18px; }
   .habit-check-in-actions { display: grid; grid-template-columns: 1fr 1fr; }
   #awakening-baseline-value-fields { grid-template-columns: 1fr; }
   .saved-plan-item, .recovery-list li { align-items: flex-start; flex-direction: column; }
+  .quest-step-row { grid-template-columns: minmax(0, 1fr); }
+  .quest-step-actions { display: grid; grid-template-columns: 1fr 1fr; }
   .item-actions { width: 100%; justify-content: flex-start; }
   .defer-control { flex: 1 1 100%; }
   .defer-control input { flex: 1 1 auto; width: auto; }

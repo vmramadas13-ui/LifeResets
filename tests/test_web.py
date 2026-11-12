@@ -11,6 +11,9 @@ def test_web_shell_and_pwa_files_are_served() -> None:
         assert page.status_code == 200
         assert "LifeResets" in page.text
         assert 'id="daily-plan-form"' in page.text
+        assert 'id="quests-section"' in page.text
+        assert 'id="quest-form"' in page.text
+        assert 'id="quest-list"' in page.text
         assert 'id="schedule-context"' in page.text
         assert 'id="busy-window-list"' in page.text
         assert 'id="day-start-time"' in page.text
@@ -50,6 +53,11 @@ def test_web_shell_and_pwa_files_are_served() -> None:
         assert "leave busy times clear" in app_script.text
         assert "Reschedule history ·" in app_script.text
         assert "updateHabitBuilderPreview" in app_script.text
+        assert 'api("/api/v1/quests")' in app_script.text
+        assert "Complete step" in app_script.text
+        assert "Add to today" in app_script.text
+        assert 'editSummary.textContent = "Edit quest"' in app_script.text
+        assert "Save quest changes" in app_script.text
         assert "unit is locked to keep its history accurate" in app_script.text
         assert "Dated history remains unchanged." in app_script.text
         assert "Turn next step into a task" in app_script.text
@@ -86,6 +94,7 @@ def test_web_shell_and_pwa_files_are_served() -> None:
         assert client.get("/static/app-icon-512.png").status_code == 200
         worker = client.get("/sw.js")
         assert worker.status_code == 200
+        assert 'const CACHE = "liferesets-shell-v4"' in worker.text
         assert worker.headers["service-worker-allowed"] == "/"
         assert 'url.pathname.startsWith("/api/")' in worker.text
         assert client.get("/static/app.js").status_code == 200

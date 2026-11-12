@@ -3,6 +3,7 @@ const notice = $("#notice");
 let workspaceTasks = [];
 let workspaceDomains = [];
 let workspaceGoals = [];
+let workspaceQuests = [];
 let dailyPlan = null;
 let workspaceProgress = null;
 let coreReply = "";
@@ -817,9 +818,10 @@ async function loadWorkspace() {
   $("#logout").hidden = false;
   if (!$("#daily-plan-date").value) $("#daily-plan-date").value = localDateString();
   const planDate = $("#daily-plan-date").value;
-  const [domains, goals, habits, preview, rpg, insights, inbox, awakening, campaigns, reviews, consents, tasks, currentPlan, recovery, skills, chronicle, agentActions] = await Promise.all([
+  const [domains, goals, habits, preview, rpg, insights, inbox, awakening, campaigns, reviews, consents, tasks, quests, currentPlan, recovery, skills, chronicle, agentActions] = await Promise.all([
     api("/api/v1/domains"), api("/api/v1/goals"), api("/api/v1/habits"), api("/api/v1/plans/preview"), api("/api/v1/rpg/status"), api("/api/v1/insights/progress"), api("/api/v1/notifications/inbox"),
     api("/api/v1/onboarding/awakening"), api("/api/v1/campaigns"), api("/api/v1/reviews"), api("/api/v1/consents"), api("/api/v1/tasks"),
+    api("/api/v1/quests"),
     api(`/api/v1/daily-plans/${planDate}`), api(`/api/v1/daily-plans/${planDate}/recovery`),
     api("/api/v1/rpg/skills"), api("/api/v1/rpg/chronicle"), api("/api/v1/agent/actions"),
   ]);
@@ -830,6 +832,7 @@ async function loadWorkspace() {
   $("#reflection-consent").checked = reflectionStorageConsent;
   workspaceDomains = domains;
   workspaceGoals = goals;
+  workspaceQuests = quests;
   renderDomainSettings(domains);
   renderDomainSubareas(domains);
   const activeDomains = domains.filter((domain) => domain.enabled);
@@ -841,11 +844,13 @@ async function loadWorkspace() {
   $("#agent-goal").replaceChildren(...activeGoals.map((goal) => new Option(goal.title, goal.id)));
   $("#task-goal").replaceChildren(new Option("No goal selected", ""), ...activeGoals.map((goal) => new Option(goal.title, goal.id)));
   $("#habit-goal").replaceChildren(new Option("No goal linked", ""), ...activeGoals.map((goal) => new Option(goal.title, goal.id)));
+  $("#quest-goal").replaceChildren(new Option("No goal linked", ""), ...activeGoals.map((goal) => new Option(goal.title, goal.id)));
   $("#agent-form button").disabled = activeGoals.length === 0;
   workspaceTasks = tasks;
   dailyPlan = currentPlan;
   workspaceProgress = rpg;
   renderGoals(goals);
+  renderQuests(quests);
   renderHabits(habits);
   renderPlan(preview);
   renderDailyPlan(currentPlan);
@@ -909,7 +914,15 @@ function renderTaskPicker(plan = dailyPlan) {
     const strong = document.createElement("strong");
     strong.textContent = task.title;
     const meta = document.createElement("small");
-    meta.textContent = task.due_date ? `Due ${task.due_date}` : task.status === "completed" ? "Completed" : "Open action";
+    const questStep = workspaceQuests.flatMap((quest) => quest.steps.map((step) => ({ quest, step })))
+      .find(({ step }) => step.task_id === task.id);
+    const metadata = [];
+    if (task.due_date) metadata.push(`Due ${task.due_date}`);
+    else metadata.push(task.status === "completed" ? "Completed" : "Open action");
+    if (questStep) {
+      metadata.push(`${questStep.quest.title} · Step ${questStep.step.position + 1} of ${questStep.quest.total_steps}`);
+    }
+    meta.textContent = metadata.join(" · ");
     title.append(strong, meta);
     choice.append(checkbox, title);
     const minutesLabel = document.createElement("label");
@@ -1636,6 +1649,169 @@ function renderPlan(plan) {
   list.replaceChildren(...rows);
 }
 
+function renderQuests(quests) {
+  const rows = quests.map((quest) => {
+    const item = document.createElement("li");
+    item.className = "quest-card";
+    const title = document.createElement("strong");
+    title.textContent = quest.title;
+    const state = document.createElement("small");
+    state.textContent = `${quest.status[0].toUpperCase()}${quest.status.slice(1)} · ${quest.completed_steps} of ${quest.total_steps} steps`;
+    item.append(title, state);
+    if (quest.description) {
+      const description = document.createElement("p");
+      description.className = "hint";
+      description.textContent = quest.description;
+      item.append(description);
+    }
+    const editDetails = document.createElement("details");
+    const editSummary = document.createElement("summary");
+    editSummary.textContent = "Edit quest";
+    editDetails.append(editSummary, createQuestEditForm(quest));
+    item.append(editDetails);
+
+    const progress = document.createElement("progress");
+    progress.max = Math.max(quest.total_steps, 1);
+    progress.value = quest.completed_steps;
+    progress.setAttribute("aria-label", `${quest.completed_steps} of ${quest.total_steps} quest steps complete`);
+    item.append(progress);
+
+    const steps = document.createElement("ol");
+    steps.className = "quest-steps";
+    for (const step of quest.steps) {
+      const stepItem = document.createElement("li");
+      const row = document.createElement("div");
+      row.className = "quest-step-row";
+      const copy = document.createElement("div");
+      copy.className = "quest-step-copy";
+      const stepTitle = document.createElement("strong");
+      stepTitle.textContent = step.title;
+      const stepMeta = document.createElement("small");
+      const labels = { pending: "Ready to plan", completed: "Completed", skipped: "Skipped" };
+      stepMeta.textContent = `${labels[step.status] || step.status}${step.due_date ? ` · due ${step.due_date}` : ""}`;
+      copy.append(stepTitle, stepMeta);
+      row.append(copy);
+
+      if (quest.status !== "archived") {
+        const actions = document.createElement("div");
+        actions.className = "quest-step-actions";
+        if (step.status === "pending") {
+          actions.append(
+            makePlanItemButton("Add to today", async () => addQuestStepToToday(step), "quiet", step.title),
+            makePlanItemButton("Complete step", async () => completeQuestStep(step), "quiet", step.title),
+          );
+        } else if (step.status === "skipped") {
+          actions.append(makePlanItemButton("Return step", async () => reopenQuestStep(step), "quiet", step.title));
+        }
+        if (actions.children.length) row.append(actions);
+      }
+      stepItem.append(row);
+      steps.append(stepItem);
+    }
+    item.append(steps);
+
+    const actions = document.createElement("div");
+    actions.className = "item-actions";
+    const lifecycle = makePlanItemButton(
+      quest.status === "archived" ? "Restore quest" : "Archive quest",
+      async () => updateQuestStatus(quest, quest.status === "archived" ? "active" : "archived"),
+      "quiet",
+      quest.title,
+    );
+    actions.append(lifecycle);
+    item.append(actions);
+    return item;
+  });
+  if (!rows.length) {
+    const empty = document.createElement("li");
+    empty.textContent = "No quests yet. Build one from a few actions when you’re ready.";
+    rows.push(empty);
+  }
+  $("#quest-list").replaceChildren(...rows);
+}
+
+function createQuestEditForm(quest) {
+  const form = document.createElement("form");
+  form.className = "quest-edit-form";
+  appendInputField(form, "Quest title", "title", "text", quest.title, {
+    required: true,
+    maxLength: 160,
+  });
+  const descriptionLabel = document.createElement("label");
+  const descriptionCaption = document.createElement("span");
+  descriptionCaption.textContent = "Purpose (optional)";
+  const description = document.createElement("textarea");
+  description.name = "description";
+  description.maxLength = 3000;
+  description.rows = 2;
+  description.value = quest.description || "";
+  descriptionLabel.append(descriptionCaption, description);
+  form.append(descriptionLabel);
+  const save = document.createElement("button");
+  save.type = "submit";
+  save.textContent = "Save quest changes";
+  form.append(save);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const payload = formObject(form);
+    payload.description = payload.description.trim() || null;
+    try {
+      await api(`/api/v1/quests/${quest.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+      await loadWorkspace();
+      showNotice("Quest changes saved.");
+    } catch (error) {
+      showNotice(error.message);
+    }
+  });
+  return form;
+}
+
+async function addQuestStepToToday(step) {
+  const checkbox = [...$("#task-options").querySelectorAll("[data-plan-task]")]
+    .find((candidate) => candidate.dataset.planTask === step.task_id);
+  if (!checkbox) {
+    showNotice("This step is not available to add to today’s plan.");
+    return;
+  }
+  if (!checkbox.checked) {
+    checkbox.checked = true;
+    checkbox.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+  $("#today").scrollIntoView({ block: "start" });
+  checkbox.focus();
+  showNotice("Step added to today’s choices. Save the plan when you’re ready.");
+}
+
+async function completeQuestStep(step) {
+  await api(`/api/v1/tasks/${step.task_id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "completed" }),
+  });
+  await loadWorkspace();
+  showNotice("Quest step completed.");
+}
+
+async function reopenQuestStep(step) {
+  await api(`/api/v1/tasks/${step.task_id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "pending" }),
+  });
+  await loadWorkspace();
+  showNotice("Quest step returned to your action list.");
+}
+
+async function updateQuestStatus(quest, status) {
+  await api(`/api/v1/quests/${quest.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+  await loadWorkspace();
+  showNotice(status === "archived" ? "Quest archived. Its steps and history remain." : "Quest restored.");
+}
+
 function renderAgentActions(actions) {
   const rows = actions.slice(0, 8).map((action) => {
     const item = document.createElement("li");
@@ -1947,6 +2123,29 @@ $("#goal-form").addEventListener("submit", async (event) => {
 });
 
 $("#goal-form").elements.domain.addEventListener("change", updateGoalSubareaOptions);
+
+$("#quest-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const payload = formObject(form);
+  const steps = payload.steps.split(/\r?\n/).map((title) => title.trim()).filter(Boolean);
+  if (steps.length < 2 || steps.length > 12) {
+    showNotice("Add between 2 and 12 quest steps, one per line.");
+    form.elements.steps.focus();
+    return;
+  }
+  payload.steps = steps.map((title) => ({ title }));
+  payload.description = payload.description.trim() || null;
+  payload.goal_id = payload.goal_id || null;
+  try {
+    await api("/api/v1/quests", { method: "POST", body: JSON.stringify(payload) });
+    form.reset();
+    await loadWorkspace();
+    showNotice("Quest saved. Its steps are ready to plan.");
+  } catch (error) {
+    showNotice(error.message);
+  }
+});
 
 $("#campaign-form").addEventListener("submit", async (event) => {
   event.preventDefault();

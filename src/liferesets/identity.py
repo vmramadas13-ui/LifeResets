@@ -18,6 +18,7 @@ from liferesets.database import get_db
 from liferesets.domain_data import export_domain_data
 from liferesets.lifecycle import export_lifecycle_data
 from liferesets.models import AuditEvent, ConsentRecord, Profile, User
+from liferesets.quests import export_quests
 from liferesets.rpg import export_character_data
 from liferesets.security import (
     DUMMY_PASSWORD_HASH,
@@ -295,6 +296,7 @@ def export_account_data(
         "domain_data": export_domain_data(db, auth.user.id),
         "lifecycle_data": export_lifecycle_data(db, auth.user.id),
         "daily_plans": export_daily_plans(db, auth.user.id),
+        "quests": export_quests(db, auth.user.id),
         "character_data": export_character_data(db, auth.user.id),
         "agent_actions": export_agent_actions(db, auth.user.id),
     }
