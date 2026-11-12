@@ -10,7 +10,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session, selectinload
 
 from liferesets.database import get_db
 from liferesets.domain_data import DomainCode
@@ -19,8 +20,11 @@ from liferesets.models import (
     AwakeningBaseline,
     Campaign,
     ConsentRecord,
+    Goal,
     OnboardingStep,
     Review,
+    ReviewFollowUp,
+    Task,
     User,
 )
 from liferesets.security import Authenticated, AuthenticatedWithCsrf
@@ -178,6 +182,11 @@ class ReviewUpdate(BaseModel):
     responses: ReviewResponses | None = None
 
 
+class ReviewCarryForwardInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    goal_id: UUID | None = None
+
+
 def _audit(db: Session, user: User, action: str) -> None:
     db.add(AuditEvent(user_id=user.id, action=action))
 
@@ -201,6 +210,9 @@ def _review_payload(review: Review) -> dict[str, object]:
         "status": review.status,
         "responses": review.responses,
         "prompts": REVIEW_PROMPTS[review.cadence],
+        "follow_up_task_id": (
+            str(review.follow_up.task_id) if review.follow_up is not None else None
+        ),
     }
 
 
@@ -450,6 +462,7 @@ def list_reviews(
     reviews = db.scalars(
         select(Review)
         .where(Review.user_id == auth.user.id)
+        .options(selectinload(Review.follow_up).selectinload(ReviewFollowUp.task))
         .order_by(Review.created_at.desc())
     ).all()
     return [_review_payload(review) for review in reviews]
@@ -520,6 +533,115 @@ def update_review(
     return _review_payload(review)
 
 
+@router.post("/reviews/{review_id}/carry-forward")
+def carry_forward_review_next_step(
+    review_id: UUID,
+    request: ReviewCarryForwardInput,
+    auth: AuthenticatedWithCsrf,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    """Create at most one user-approved task from a completed review's next step."""
+    review = db.scalar(
+        select(Review)
+        .where(Review.id == review_id, Review.user_id == auth.user.id)
+        .options(selectinload(Review.follow_up).selectinload(ReviewFollowUp.task))
+    )
+    if review is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "resource_not_found",
+                "message": "The requested resource was not found.",
+            },
+        )
+
+    if review.follow_up is not None:
+        task = review.follow_up.task
+        return {
+            "created": False,
+            "task": {
+                "id": str(task.id),
+                "title": task.title,
+                "goal_id": str(task.goal_id) if task.goal_id else None,
+            },
+        }
+
+    if review.status != "completed":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "review_not_completed",
+                "message": "Complete the review before carrying its next step forward.",
+            },
+        )
+    next_step = (review.responses.get("next_step") or "").strip()
+    if not next_step:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "review_next_step_required",
+                "message": "Add a next step to the review before carrying it forward.",
+            },
+        )
+    if (
+        request.goal_id is not None
+        and db.scalar(
+            select(Goal.id).where(
+                Goal.id == request.goal_id,
+                Goal.user_id == auth.user.id,
+                Goal.status == "active",
+            )
+        )
+        is None
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "resource_not_found",
+                "message": "The requested resource was not found.",
+            },
+        )
+
+    task = Task(
+        user_id=auth.user.id,
+        goal_id=request.goal_id,
+        title=next_step[:160].strip(),
+        description=next_step if len(next_step) > 160 else None,
+    )
+    follow_up = ReviewFollowUp(review=review, task=task)
+    db.add(follow_up)
+    _audit(db, auth.user, "review.next_step_carried_forward")
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        existing = db.scalar(
+            select(ReviewFollowUp)
+            .where(ReviewFollowUp.review_id == review_id)
+            .options(selectinload(ReviewFollowUp.task))
+        )
+        if existing is None:
+            raise
+        task = existing.task
+        return {
+            "created": False,
+            "task": {
+                "id": str(task.id),
+                "title": task.title,
+                "goal_id": str(task.goal_id) if task.goal_id else None,
+            },
+        }
+    db.refresh(task)
+    return {
+        "created": True,
+        "task": {
+            "id": str(task.id),
+            "title": task.title,
+            "goal_id": str(task.goal_id) if task.goal_id else None,
+        },
+    }
+
+
 @router.delete("/reviews/{review_id}/responses")
 def delete_review_responses(
     review_id: UUID,
@@ -547,7 +669,11 @@ def export_lifecycle_data(
     steps = db.scalars(
         select(OnboardingStep).where(OnboardingStep.user_id == user_id)
     ).all()
-    reviews = db.scalars(select(Review).where(Review.user_id == user_id)).all()
+    reviews = db.scalars(
+        select(Review)
+        .where(Review.user_id == user_id)
+        .options(selectinload(Review.follow_up).selectinload(ReviewFollowUp.task))
+    ).all()
     baselines = db.scalars(
         select(AwakeningBaseline)
         .where(AwakeningBaseline.user_id == user_id)

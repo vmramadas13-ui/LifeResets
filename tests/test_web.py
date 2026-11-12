@@ -35,6 +35,13 @@ def test_web_shell_and_pwa_files_are_served() -> None:
         assert 'name="start_date"' in page.text
         assert 'name="end_date"' in page.text
         assert 'name="reminder_preference"' in page.text
+        app_script = client.get("/static/app.js")
+        assert app_script.status_code == 200
+        assert "Turn next step into a task" in app_script.text
+        assert (
+            "deleting the review answers will not delete this task"
+            in app_script.text.lower()
+        )
         assert 'id="reviews-section"' in page.text
         assert 'id="review-form"' in page.text
         assert 'id="reflection-consent"' in page.text

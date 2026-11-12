@@ -567,6 +567,31 @@ class Review(Base):
     )
 
     user: Mapped[User] = relationship(back_populates="reviews")
+    follow_up: Mapped[ReviewFollowUp | None] = relationship(
+        back_populates="review",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
+
+
+class ReviewFollowUp(Base):
+    """Link one user-approved follow-up task to a review."""
+
+    __tablename__ = "review_follow_ups"
+    __table_args__ = (UniqueConstraint("task_id", name="uq_review_follow_ups_task"),)
+
+    review_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("reviews.id", ondelete="CASCADE"), primary_key=True
+    )
+    task_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+    review: Mapped[Review] = relationship(back_populates="follow_up")
+    task: Mapped[Task] = relationship()
 
 
 class DailyPlan(Base):

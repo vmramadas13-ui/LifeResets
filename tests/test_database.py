@@ -38,7 +38,7 @@ def test_migration_upgrade_and_rollback(tmp_path: Path, monkeypatch) -> None:
             revision = connection.execute(
                 text("SELECT version_num FROM alembic_version")
             ).scalar_one()
-        assert revision == "b527d913a064"
+        assert revision == "4e6c9014dfba"
         assert {
             "users",
             "profiles",
@@ -53,6 +53,7 @@ def test_migration_upgrade_and_rollback(tmp_path: Path, monkeypatch) -> None:
             "campaigns",
             "onboarding_steps",
             "reviews",
+            "review_follow_ups",
             "daily_plans",
             "daily_plan_items",
             "progression_settings",
@@ -93,6 +94,7 @@ def test_migration_upgrade_and_rollback(tmp_path: Path, monkeypatch) -> None:
             "campaigns",
             "onboarding_steps",
             "reviews",
+            "review_follow_ups",
             "daily_plans",
             "daily_plan_items",
             "progression_settings",

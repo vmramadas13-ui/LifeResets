@@ -606,7 +606,7 @@ async function loadWorkspace() {
   renderInbox(inbox);
   renderAwakening(awakening);
   renderCampaigns(campaigns);
-  renderReviews(reviews);
+  renderReviews(reviews, goals);
   renderSkills(skills);
   renderChronicle(chronicle);
   renderAgentActions(agentActions);
@@ -980,7 +980,7 @@ function renderCampaigns(campaigns) {
   $("#campaigns").replaceChildren(...rows);
 }
 
-function renderReviews(reviews) {
+function renderReviews(reviews, goals) {
   const rows = reviews.map((review) => {
     const item = document.createElement("li");
     const title = document.createElement("strong");
@@ -1059,6 +1059,50 @@ function renderReviews(reviews) {
       form.append(deleteAnswers);
     }
     disclosure.append(summary, form);
+    const nextStep = (review.responses.next_step || "").trim();
+    if ((review.status === "completed" && nextStep) || review.follow_up_task_id) {
+      const carryForward = document.createElement("div");
+      carryForward.className = "review-carry-forward";
+      const explanation = document.createElement("p");
+      explanation.className = "field-hint";
+      explanation.textContent = "This saves the next step as a separate task. It will not enter a daily plan unless you pick it. Deleting the review answers will not delete this task.";
+      carryForward.append(explanation);
+      if (review.follow_up_task_id) {
+        const saved = document.createElement("small");
+        saved.textContent = "This review already has a follow-up task. You can choose it for a day in the planner.";
+        carryForward.append(saved);
+      } else {
+        const goalLabel = document.createElement("label");
+        goalLabel.textContent = "Link to a goal (optional)";
+        const goalSelect = document.createElement("select");
+        goalSelect.append(new Option("No goal link", ""));
+        goals
+          .filter((goal) => goal.status === "active")
+          .forEach((goal) => goalSelect.append(new Option(goal.title, goal.id)));
+        goalLabel.append(goalSelect);
+        const createTask = document.createElement("button");
+        createTask.type = "button";
+        createTask.textContent = "Turn next step into a task";
+        createTask.addEventListener("click", async () => {
+          createTask.disabled = true;
+          try {
+            const result = await api(`/api/v1/reviews/${review.id}/carry-forward`, {
+              method: "POST",
+              body: JSON.stringify({ goal_id: goalSelect.value || null }),
+            });
+            await loadWorkspace();
+            showNotice(result.created
+              ? "Next step saved as a task. Add it to a daily plan when you choose."
+              : "This review already has a follow-up task.");
+          } catch (error) {
+            createTask.disabled = false;
+            showNotice(error.message);
+          }
+        });
+        carryForward.append(goalLabel, createTask);
+      }
+      disclosure.append(carryForward);
+    }
     item.append(title, detail, disclosure);
     return item;
   });

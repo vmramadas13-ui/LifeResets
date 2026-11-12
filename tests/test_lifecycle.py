@@ -306,6 +306,12 @@ def test_campaign_is_90_days_and_owned(client, test_user, db_session: Session) -
         == 404
     )
     assert (
+        client.post(
+            f"/api/v1/reviews/{foreign_review.id}/carry-forward", json={}
+        ).status_code
+        == 404
+    )
+    assert (
         client.delete(
             f"/api/v1/onboarding/awakening/baselines/{foreign_baseline.id}"
         ).status_code
@@ -355,6 +361,85 @@ def test_review_responses_require_current_consent_and_export(client, test_user) 
     assert deleted.status_code == 200
     assert deleted.json() == {"deleted_fields": 1}
     assert client.get("/api/v1/reviews").json()[0]["responses"] == {}
+
+
+def test_completed_review_next_step_creates_one_user_selected_task(
+    client, test_user
+) -> None:
+    _login(client, test_user)
+    _record_reflection_consent(client)
+    goal = client.post(
+        "/api/v1/goals", json={"domain": "learning", "title": "Study"}
+    ).json()
+    next_step = "Practice a small lesson and write what I learned. " * 8
+    review_response = client.post(
+        "/api/v1/reviews",
+        json={
+            "cadence": "weekly",
+            "period_start": "2026-11-02",
+            "period_end": "2026-11-08",
+            "status": "completed",
+            "responses": {"next_step": next_step},
+        },
+    )
+    assert review_response.status_code == 201, review_response.text
+    review = review_response.json()
+    assert review["follow_up_task_id"] is None
+
+    draft = client.post(
+        "/api/v1/reviews",
+        json={
+            "cadence": "monthly",
+            "period_start": "2026-10-01",
+            "period_end": "2026-10-31",
+            "responses": {"next_step": "Prepare one practice exercise"},
+        },
+    ).json()
+    draft_carry = client.post(f"/api/v1/reviews/{draft['id']}/carry-forward", json={})
+    assert draft_carry.status_code == 409
+    no_next_step = client.post(
+        "/api/v1/reviews",
+        json={
+            "cadence": "weekly",
+            "period_start": "2026-10-26",
+            "period_end": "2026-11-01",
+            "status": "completed",
+        },
+    ).json()
+    missing_step = client.post(
+        f"/api/v1/reviews/{no_next_step['id']}/carry-forward", json={}
+    )
+    assert missing_step.status_code == 422
+
+    carry = client.post(
+        f"/api/v1/reviews/{review['id']}/carry-forward",
+        json={"goal_id": goal["id"]},
+    )
+    assert carry.status_code == 200, carry.text
+    assert carry.json()["created"] is True
+    task = carry.json()["task"]
+    assert task["goal_id"] == goal["id"]
+    assert len(task["title"]) <= 160
+    tasks = client.get("/api/v1/tasks").json()
+    assert len(tasks) == 1
+    assert tasks[0]["description"] == next_step.strip()
+    today_plan = client.get(f"/api/v1/daily-plans/{date.today().isoformat()}")
+    assert today_plan.status_code == 200
+    assert today_plan.json()["items"] == []
+
+    repeated = client.post(f"/api/v1/reviews/{review['id']}/carry-forward", json={})
+    assert repeated.status_code == 200
+    assert repeated.json()["created"] is False
+    assert repeated.json()["task"]["id"] == task["id"]
+    assert len(client.get("/api/v1/tasks").json()) == 1
+    exported_review = client.get("/api/v1/export").json()["lifecycle_data"]["reviews"]
+    carried_review = next(
+        item for item in exported_review if item["id"] == review["id"]
+    )
+    assert carried_review["follow_up_task_id"] == task["id"]
+    deleted = client.delete(f"/api/v1/reviews/{review['id']}/responses")
+    assert deleted.status_code == 200
+    assert len(client.get("/api/v1/tasks").json()) == 1
 
 
 def test_monthly_review_has_its_own_guided_prompts(client, test_user) -> None:

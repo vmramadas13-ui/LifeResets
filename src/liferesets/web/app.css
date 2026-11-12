@@ -166,6 +166,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 details { margin-top: 16px; padding-top: 14px; border-top: 2px solid var(--line); }
 summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-weight: 850; }
 details form { margin-top: 15px; }
+.review-carry-forward { display: grid; max-width: 620px; gap: 10px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.review-carry-forward p { margin: 0; }
+.review-carry-forward button { justify-self: start; }
 #habit-weekdays-field[hidden], #habit-custom-schedule-field[hidden] { display: none; }
 .habit-weekdays { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; }
 .habit-weekdays .check-row { min-width: 0; min-height: 42px; justify-content: center; gap: 5px; padding: 5px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); font-size: .8rem; }
