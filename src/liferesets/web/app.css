@@ -166,6 +166,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 details { margin-top: 16px; padding-top: 14px; border-top: 2px solid var(--line); }
 summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-weight: 850; }
 details form { margin-top: 15px; }
+#habit-weekdays-field[hidden], #habit-custom-schedule-field[hidden] { display: none; }
+.habit-weekdays { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; }
+.habit-weekdays .check-row { min-width: 0; min-height: 42px; justify-content: center; gap: 5px; padding: 5px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); font-size: .8rem; }
+.habit-weekdays .check-row input { flex: 0 0 20px; width: 20px; height: 20px; min-height: 20px; }
 .habit-check-in-form { max-width: none; grid-template-columns: minmax(130px, .5fr) minmax(200px, 1fr) auto; align-items: end; }
 .habit-check-in-actions { display: flex; gap: 8px; }
 .habit-check-in-actions button { min-height: 48px; }
@@ -329,6 +333,7 @@ section[id] { scroll-margin-top: 18px; }
   .task-create-form label:first-child { grid-column: 1 / -1; }
   .habit-check-in-form { grid-template-columns: 1fr 1fr; }
   .habit-check-in-form label:nth-child(2), .habit-check-in-actions { grid-column: 1 / -1; }
+  .habit-weekdays { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .settings-grid { grid-template-columns: 1fr; }
   .mobile-nav { position: fixed; z-index: 20; right: 0; bottom: 0; left: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 3px; padding: 7px max(8px, env(safe-area-inset-right)) calc(7px + env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); border-top: 2px solid var(--ink); background: var(--surface); box-shadow: 0 -3px 0 color-mix(in srgb, var(--ink) 15%, transparent); }
   .mobile-nav a { min-width: 0; min-height: 48px; display: grid; place-items: center; padding: 4px 2px; border-radius: 10px; color: var(--ink); font-size: clamp(.63rem, 2.7vw, .78rem); font-weight: 850; text-align: center; text-decoration: none; }

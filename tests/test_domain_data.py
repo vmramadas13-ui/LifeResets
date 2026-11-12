@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
@@ -265,6 +265,150 @@ def test_habit_check_ins_are_reversible_and_exported(client, test_user) -> None:
     assert resumed.status_code == 200
     exported = client.get("/api/v1/export").json()["domain_data"]["habits"][0]
     assert len(exported["check_ins"]) == 2
+
+
+def test_weekly_habit_schedule_respects_weekdays_dates_and_pause(
+    client, test_user
+) -> None:
+    _login(client, test_user)
+    today = date.today()
+    habit_response = client.post(
+        "/api/v1/habits",
+        json={
+            "cue": "after breakfast",
+            "action": "take a short walk",
+            "frequency": "weekly",
+            "weekdays": [today.isoweekday()],
+            "start_date": today.isoformat(),
+            "end_date": (today + timedelta(days=7)).isoformat(),
+            "reminder_preference": "in_app",
+            "minimum_version": "walk for five minutes",
+            "recovery_action": "restart with a short walk",
+        },
+    )
+    assert habit_response.status_code == 201, habit_response.text
+    habit = habit_response.json()
+    assert habit["weekdays"] == [today.isoweekday()]
+    assert habit["start_date"] == today.isoformat()
+    assert habit["end_date"] == (today + timedelta(days=7)).isoformat()
+    assert habit["reminder_preference"] == "in_app"
+    assert habit["due_today"] is True
+
+    unscheduled_day = client.post(
+        f"/api/v1/habits/{habit['id']}/check-ins",
+        json={
+            "status": "completed",
+            "recorded_on": (today + timedelta(days=1)).isoformat(),
+        },
+    )
+    assert unscheduled_day.status_code == 422
+
+    logged = client.post(
+        f"/api/v1/habits/{habit['id']}/check-ins",
+        json={"status": "completed", "recorded_on": today.isoformat()},
+    )
+    assert logged.status_code == 201, logged.text
+
+    paused = client.patch(f"/api/v1/habits/{habit['id']}", json={"is_active": False})
+    assert paused.status_code == 200
+    assert paused.json()["due_today"] is False
+    assert paused.json()["next_due_on"] is None
+    while_paused = client.post(
+        f"/api/v1/habits/{habit['id']}/check-ins",
+        json={
+            "status": "skipped",
+            "recorded_on": (today + timedelta(days=7)).isoformat(),
+        },
+    )
+    assert while_paused.status_code == 422
+
+
+def test_custom_interval_keeps_its_dates_after_a_skipped_occurrence(
+    client, test_user
+) -> None:
+    _login(client, test_user)
+    today = date.today()
+    start_date = today - timedelta(days=4)
+    end_date = today + timedelta(days=10)
+    habit_response = client.post(
+        "/api/v1/habits",
+        json={
+            "cue": "after lunch",
+            "action": "review one lesson",
+            "frequency": "custom",
+            "interval_days": 3,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "minimum_version": "review one note",
+            "recovery_action": "restart with one note",
+        },
+    )
+    assert habit_response.status_code == 201, habit_response.text
+    habit = habit_response.json()
+    elapsed = (today - start_date).days
+    expected_next = today + timedelta(days=(-elapsed) % 3)
+    assert habit["interval_days"] == 3
+    assert habit["next_due_on"] == expected_next.isoformat()
+
+    skipped = client.post(
+        f"/api/v1/habits/{habit['id']}/check-ins",
+        json={"status": "skipped", "recorded_on": start_date.isoformat()},
+    )
+    assert skipped.status_code == 201, skipped.text
+    after_skip = client.get("/api/v1/habits").json()[0]
+    assert after_skip["next_due_on"] == expected_next.isoformat()
+    assert after_skip["check_ins"][0]["status"] == "skipped"
+
+    outside_window = client.post(
+        f"/api/v1/habits/{habit['id']}/check-ins",
+        json={
+            "status": "completed",
+            "recorded_on": (end_date + timedelta(days=1)).isoformat(),
+        },
+    )
+    assert outside_window.status_code == 422
+
+
+def test_weekly_any_day_habit_has_one_check_in_per_week(client, test_user) -> None:
+    _login(client, test_user)
+    today = date.today()
+    current_week_start = today - timedelta(days=today.isoweekday() - 1)
+    previous_week_start = current_week_start - timedelta(days=7)
+    habit_response = client.post(
+        "/api/v1/habits",
+        json={
+            "cue": "at a quiet moment",
+            "action": "write a short reflection",
+            "frequency": "weekly",
+            "start_date": (previous_week_start - timedelta(days=7)).isoformat(),
+            "minimum_version": "write one sentence",
+            "recovery_action": "return next week",
+        },
+    )
+    assert habit_response.status_code == 201, habit_response.text
+    habit = habit_response.json()
+    assert habit["weekdays"] == []
+
+    first_entry = client.post(
+        f"/api/v1/habits/{habit['id']}/check-ins",
+        json={
+            "status": "skipped",
+            "recorded_on": previous_week_start.isoformat(),
+        },
+    )
+    assert first_entry.status_code == 201, first_entry.text
+    second_entry = client.post(
+        f"/api/v1/habits/{habit['id']}/check-ins",
+        json={
+            "status": "completed",
+            "recorded_on": (previous_week_start + timedelta(days=4)).isoformat(),
+        },
+    )
+    assert second_entry.status_code == 422
+
+    current = client.get("/api/v1/habits").json()[0]
+    assert current["due_today"] is True
+    assert current["next_due_on"] == today.isoformat()
 
 
 def test_account_ownership_and_client_cannot_claim_verified_evidence(

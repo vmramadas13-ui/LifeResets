@@ -55,7 +55,12 @@
               <label>Cue<input name="cue" maxlength="160" placeholder="After breakfast" required></label>
               <label>Action<input name="action" maxlength="240" placeholder="Review one lesson" required></label>
               <label>Frequency<select name="frequency" id="habit-frequency"><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="custom">Custom</option></select></label>
-              <label id="habit-custom-schedule-field" hidden>Custom schedule<input name="custom_schedule" maxlength="160" placeholder="Tuesday and Saturday"></label>
+              <div id="habit-weekdays-field" hidden><p class="field-hint">Choose specific days, or leave them blank to make this due once on any day each week.</p><div class="habit-weekdays"><label class="check-row"><input name="weekdays" type="checkbox" value="1"><span>Mon</span></label><label class="check-row"><input name="weekdays" type="checkbox" value="2"><span>Tue</span></label><label class="check-row"><input name="weekdays" type="checkbox" value="3"><span>Wed</span></label><label class="check-row"><input name="weekdays" type="checkbox" value="4"><span>Thu</span></label><label class="check-row"><input name="weekdays" type="checkbox" value="5"><span>Fri</span></label><label class="check-row"><input name="weekdays" type="checkbox" value="6"><span>Sat</span></label><label class="check-row"><input name="weekdays" type="checkbox" value="7"><span>Sun</span></label></div></div>
+              <label id="habit-custom-schedule-field" hidden>Repeat every N days<input name="interval_days" type="number" min="1" max="365" value="3" inputmode="numeric"></label>
+              <label>Start date<input id="habit-start-date" name="start_date" type="date" required></label>
+              <label>End date (optional)<input name="end_date" type="date"></label>
+              <label>Reminder preference<select name="reminder_preference"><option value="none">No reminder</option><option value="in_app">Show an in-app reminder when due</option></select></label>
+              <p class="field-hint">Reminders appear inside LifeResets only. Push and email reminders are not connected.</p>
               <label>Minimum version<input name="minimum_version" maxlength="240" placeholder="Review one note" required></label>
               <label>Gentle restart action<input name="recovery_action" maxlength="240" placeholder="Restart with one note" required></label>
               <button type="submit">Save routine</button>

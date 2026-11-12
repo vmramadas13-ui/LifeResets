@@ -149,6 +149,12 @@ function nextDateString(value) {
   return localDateString(date);
 }
 
+function previousDateString(value) {
+  const date = new Date(`${value}T12:00:00`);
+  date.setDate(date.getDate() - 1);
+  return localDateString(date);
+}
+
 function csrfToken() {
   return document.cookie.split("; ").find((item) => item.startsWith("lr-csrf="))?.split("=").slice(1).join("=") || "";
 }
@@ -379,7 +385,7 @@ function renderGoals(goals) {
   $("#goals").replaceChildren(...rows);
 }
 
-function createHabitCheckInForm(habit) {
+function createHabitCheckInForm(habit, latestAllowedDate = localDateString()) {
   const form = document.createElement("form");
   form.className = "habit-check-in-form";
   const dateLabel = document.createElement("label");
@@ -387,7 +393,12 @@ function createHabitCheckInForm(habit) {
   const date = document.createElement("input");
   date.type = "date";
   date.name = "recorded_on";
-  date.value = localDateString();
+  date.value = latestAllowedDate;
+  if (habit.start_date) date.min = habit.start_date;
+  date.max = habit.end_date && habit.end_date < latestAllowedDate
+    ? habit.end_date
+    : latestAllowedDate;
+  if (date.value > date.max) date.value = date.max;
   date.required = true;
   dateLabel.append(date);
   const reasonLabel = document.createElement("label");
@@ -430,19 +441,42 @@ function createHabitCheckInForm(habit) {
   return form;
 }
 
+function habitFrequencyLabel(habit) {
+  if (habit.frequency === "daily") return "Daily";
+  if (habit.frequency === "weekly") {
+    const weekdayNames = ["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    return habit.weekdays.length
+      ? "Weekly · " + habit.weekdays.map((day) => weekdayNames[day]).join(", ")
+      : "Once a week · any day";
+  }
+  if (habit.interval_days) return "Every " + habit.interval_days + " days";
+  return habit.custom_schedule
+    ? "Manual schedule · " + habit.custom_schedule
+    : "Custom schedule";
+}
+
 function renderHabits(habits) {
   const rows = habits.map((habit) => {
     const item = document.createElement("li");
     const title = document.createElement("strong");
     title.textContent = habit.action;
-    const frequency = habit.frequency === "custom" ? habit.custom_schedule : habit.frequency;
     const cue = document.createElement("small");
-    cue.textContent = `${habit.cue} · ${frequency || habit.frequency}${habit.is_active ? " · Active" : " · Paused"}`;
+    cue.textContent = habit.cue + " · " + habitFrequencyLabel(habit) + (habit.is_active ? " · Active" : " · Paused");
     const minimum = document.createElement("small");
     minimum.textContent = `Small version: ${habit.minimum_version}`;
     const restart = document.createElement("small");
     restart.textContent = `Restart idea: ${habit.recovery_action}`;
     item.append(title, cue, minimum, restart);
+    if (habit.start_date || habit.end_date) {
+      const range = document.createElement("small");
+      range.textContent = "Schedule dates: " + (habit.start_date || "any start") + " to " + (habit.end_date || "no end date");
+      item.append(range);
+    }
+    if (habit.reminder_preference === "in_app") {
+      const reminder = document.createElement("small");
+      reminder.textContent = "In-app reminder: shown here when this routine is due.";
+      item.append(reminder);
+    }
 
     const controls = document.createElement("div");
     controls.className = "item-actions";
@@ -472,10 +506,34 @@ function renderHabits(habits) {
       const today = localDateString();
       const todayEntry = habit.check_ins.find((entry) => entry.recorded_on === today);
       const todayStatus = document.createElement("small");
-      todayStatus.textContent = todayEntry
-        ? `Today: ${todayEntry.status === "completed" ? "Done" : "Skipped"}`
-        : "Today: not recorded";
-      item.append(todayStatus, createHabitCheckInForm(habit));
+      if (todayEntry) {
+        todayStatus.textContent = "Today: " + (todayEntry.status === "completed" ? "Done" : "Skipped") + " · you can update this record.";
+      } else if (habit.due_today) {
+        todayStatus.textContent = "Due today · check in whenever you’re ready.";
+      } else if (habit.next_due_on) {
+        todayStatus.textContent = "Next check-in: " + habit.next_due_on;
+      } else {
+        todayStatus.textContent = "No upcoming check-in in this date range.";
+      }
+      item.append(todayStatus);
+      if (habit.due_today) {
+        item.append(createHabitCheckInForm(habit));
+      } else {
+        const latestPastDate = previousDateString(today);
+        const pastDateLimit = habit.end_date && habit.end_date < latestPastDate
+          ? habit.end_date
+          : latestPastDate;
+        if (!habit.start_date || habit.start_date <= pastDateLimit) {
+          const pastCheckIn = document.createElement("details");
+          const summary = document.createElement("summary");
+          summary.textContent = "Log or correct an earlier check-in";
+          pastCheckIn.append(
+            summary,
+            createHabitCheckInForm(habit, pastDateLimit),
+          );
+          item.append(pastCheckIn);
+        }
+      }
     } else {
       const paused = document.createElement("small");
       paused.textContent = "Paused. No check-ins are needed until you resume it.";
@@ -1123,27 +1181,43 @@ $("#domain-settings-form").addEventListener("submit", async (event) => {
   }
 });
 
-$("#habit-frequency").addEventListener("change", () => {
-  const custom = $("#habit-frequency").value === "custom";
+function updateHabitScheduleFields() {
+  const frequency = $("#habit-frequency").value;
+  const weekly = frequency === "weekly";
+  const custom = frequency === "custom";
+  $("#habit-weekdays-field").hidden = !weekly;
   $("#habit-custom-schedule-field").hidden = !custom;
-  $("#habit-form").elements.custom_schedule.required = custom;
-});
+  const interval = $("#habit-form").elements.interval_days;
+  interval.disabled = !custom;
+  interval.required = custom;
+}
+
+$("#habit-frequency").addEventListener("change", updateHabitScheduleFields);
+$("#habit-start-date").value = localDateString();
+updateHabitScheduleFields();
 
 $("#habit-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
   const payload = formObject(form);
   if (!payload.goal_id) delete payload.goal_id;
-  if (payload.frequency !== "custom" || !payload.custom_schedule.trim()) {
-    delete payload.custom_schedule;
+  if (!payload.end_date) delete payload.end_date;
+  if (payload.frequency === "weekly") {
+    payload.weekdays = [...form.querySelectorAll('input[name="weekdays"]:checked')]
+      .map((checkbox) => Number(checkbox.value));
   } else {
-    payload.custom_schedule = payload.custom_schedule.trim();
+    delete payload.weekdays;
+  }
+  if (payload.frequency === "custom") {
+    payload.interval_days = Number(payload.interval_days);
+  } else {
+    delete payload.interval_days;
   }
   try {
     await api("/api/v1/habits", { method: "POST", body: JSON.stringify(payload) });
     form.reset();
-    $("#habit-custom-schedule-field").hidden = true;
-    form.elements.custom_schedule.required = false;
+    $("#habit-start-date").value = localDateString();
+    updateHabitScheduleFields();
     await loadWorkspace();
     showNotice("Routine saved. You can check in without keeping a streak.");
   } catch (error) {

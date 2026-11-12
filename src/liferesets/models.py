@@ -338,6 +338,18 @@ class Habit(Base):
         CheckConstraint(
             "frequency IN ('daily','weekly','custom')", name="valid_habit_frequency"
         ),
+        CheckConstraint(
+            "interval_days IS NULL OR interval_days BETWEEN 1 AND 365",
+            name="valid_habit_interval_days",
+        ),
+        CheckConstraint(
+            "start_date IS NULL OR end_date IS NULL OR end_date >= start_date",
+            name="valid_habit_date_range",
+        ),
+        CheckConstraint(
+            "reminder_preference IN ('none','in_app')",
+            name="valid_habit_reminder_preference",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -351,6 +363,13 @@ class Habit(Base):
     action: Mapped[str] = mapped_column(String(240), nullable=False)
     frequency: Mapped[str] = mapped_column(String(16), nullable=False)
     custom_schedule: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    weekdays: Mapped[list[int]] = mapped_column(JSON, default=list, nullable=False)
+    interval_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    reminder_preference: Mapped[str] = mapped_column(
+        String(16), default="none", nullable=False
+    )
     minimum_version: Mapped[str] = mapped_column(String(240), nullable=False)
     recovery_action: Mapped[str] = mapped_column(String(240), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

@@ -30,6 +30,11 @@ def test_web_shell_and_pwa_files_are_served() -> None:
         assert 'id="habits-section"' in page.text
         assert 'id="habit-form"' in page.text
         assert 'id="habit-frequency"' in page.text
+        assert 'id="habit-weekdays-field"' in page.text
+        assert 'name="interval_days"' in page.text
+        assert 'name="start_date"' in page.text
+        assert 'name="end_date"' in page.text
+        assert 'name="reminder_preference"' in page.text
         assert 'id="reviews-section"' in page.text
         assert 'id="review-form"' in page.text
         assert 'id="reflection-consent"' in page.text

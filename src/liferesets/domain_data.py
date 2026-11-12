@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Literal
 from uuid import UUID
@@ -228,13 +228,39 @@ class HabitCreate(BaseModel):
     action: str = Field(min_length=1, max_length=240)
     frequency: Literal["daily", "weekly", "custom"]
     custom_schedule: str | None = Field(default=None, max_length=160)
+    weekdays: list[int] = Field(default_factory=list, max_length=7)
+    interval_days: int | None = Field(default=None, ge=1, le=365)
+    start_date: date = Field(default_factory=date.today)
+    end_date: date | None = None
+    reminder_preference: Literal["none", "in_app"] = "none"
     minimum_version: str = Field(min_length=1, max_length=240)
     recovery_action: str = Field(min_length=1, max_length=240)
 
+    @field_validator("weekdays")
+    @classmethod
+    def valid_weekdays(cls, values: list[int]) -> list[int]:
+        if len(set(values)) != len(values) or any(
+            weekday < 1 or weekday > 7 for weekday in values
+        ):
+            raise ValueError("weekdays must contain unique ISO day numbers from 1 to 7")
+        return sorted(values)
+
     @model_validator(mode="after")
-    def require_custom_schedule(self) -> HabitCreate:
-        if self.frequency == "custom" and not self.custom_schedule:
-            raise ValueError("custom_schedule is required for custom frequency")
+    def valid_recurrence(self) -> HabitCreate:
+        if self.end_date is not None and self.end_date < self.start_date:
+            raise ValueError("end_date must be on or after start_date")
+        if self.frequency == "daily" and (self.weekdays or self.interval_days):
+            raise ValueError("daily frequency cannot include weekdays or an interval")
+        if self.frequency == "weekly" and self.interval_days is not None:
+            raise ValueError("weekly frequency cannot include an interval")
+        if self.frequency == "custom" and self.weekdays:
+            raise ValueError("custom interval frequency cannot include weekdays")
+        if (
+            self.frequency == "custom"
+            and self.interval_days is None
+            and not self.custom_schedule
+        ):
+            raise ValueError("interval_days is required for a custom frequency")
         return self
 
 
@@ -394,6 +420,54 @@ def _goal_payload(goal: Goal) -> dict[str, object]:
     }
 
 
+def _habit_date_in_range(habit: Habit, on_date: date) -> bool:
+    return not (
+        (habit.start_date is not None and on_date < habit.start_date)
+        or (habit.end_date is not None and on_date > habit.end_date)
+    )
+
+
+def _habit_occurs_on(habit: Habit, on_date: date) -> bool:
+    if habit.frequency == "daily":
+        return True
+    if habit.frequency == "weekly":
+        return not habit.weekdays or on_date.isoweekday() in habit.weekdays
+    if habit.interval_days is None:
+        # Older custom routines used a free-text schedule that cannot be
+        # interpreted safely, so keep them manually loggable.
+        return True
+    anchor = habit.start_date or habit.created_at.date()
+    return (on_date - anchor).days >= 0 and (
+        on_date - anchor
+    ).days % habit.interval_days == 0
+
+
+def _habit_due_on(habit: Habit, on_date: date) -> bool:
+    if not habit.is_active or not _habit_date_in_range(habit, on_date):
+        return False
+    if not _habit_occurs_on(habit, on_date):
+        return False
+    if habit.frequency == "weekly" and not habit.weekdays:
+        week_start = on_date - timedelta(days=on_date.isoweekday() - 1)
+        has_earlier_check_in = any(
+            week_start <= item.recorded_on < on_date for item in habit.check_ins
+        )
+        return not has_earlier_check_in
+    return True
+
+
+def _next_habit_due_on(habit: Habit, from_date: date) -> date | None:
+    if not habit.is_active:
+        return None
+    for offset in range(367):
+        candidate = from_date + timedelta(days=offset)
+        if habit.end_date is not None and candidate > habit.end_date:
+            return None
+        if _habit_due_on(habit, candidate):
+            return candidate
+    return None
+
+
 def _task_payload(task: Task) -> dict[str, object]:
     return {
         "id": str(task.id),
@@ -407,6 +481,8 @@ def _task_payload(task: Task) -> dict[str, object]:
 
 
 def _habit_payload(habit: Habit) -> dict[str, object]:
+    today = date.today()
+    next_due_on = _next_habit_due_on(habit, today)
     return {
         "id": str(habit.id),
         "goal_id": str(habit.goal_id) if habit.goal_id else None,
@@ -414,6 +490,15 @@ def _habit_payload(habit: Habit) -> dict[str, object]:
         "action": habit.action,
         "frequency": habit.frequency,
         "custom_schedule": habit.custom_schedule,
+        "weekdays": list(habit.weekdays or []),
+        "interval_days": habit.interval_days,
+        "start_date": habit.start_date.isoformat() if habit.start_date else None,
+        "end_date": habit.end_date.isoformat() if habit.end_date else None,
+        "reminder_preference": habit.reminder_preference,
+        "schedule_configured": habit.frequency != "custom"
+        or habit.interval_days is not None,
+        "due_today": _habit_due_on(habit, today),
+        "next_due_on": next_due_on.isoformat() if next_due_on else None,
         "minimum_version": habit.minimum_version,
         "recovery_action": habit.recovery_action,
         "is_active": habit.is_active,
@@ -859,6 +944,11 @@ def create_habit(
         action=request.action,
         frequency=request.frequency,
         custom_schedule=request.custom_schedule,
+        weekdays=request.weekdays,
+        interval_days=request.interval_days,
+        start_date=request.start_date,
+        end_date=request.end_date,
+        reminder_preference=request.reminder_preference,
         minimum_version=request.minimum_version,
         recovery_action=request.recovery_action,
     )
@@ -924,6 +1014,14 @@ def record_habit_check_in(
     )
     if habit is None:
         raise _not_found()
+    if not _habit_due_on(habit, check_in.recorded_on):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "habit_not_due",
+                "message": "This routine is not scheduled for that date.",
+            },
+        )
     record = HabitCheckIn(
         recorded_on=check_in.recorded_on,
         status=check_in.status,
