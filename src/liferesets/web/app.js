@@ -238,6 +238,102 @@ function renderDomainSettings(domains) {
   $("#domain-settings").replaceChildren(...rows);
 }
 
+function renderDomainSubareas(domains) {
+  const groups = domains.map((domain) => {
+    const details = document.createElement("details");
+    const summary = document.createElement("summary");
+    summary.textContent = `${domain.name} · ${domain.subareas.length} subareas`;
+    details.append(summary);
+
+    const list = document.createElement("ul");
+    list.className = "domain-subarea-list";
+    for (const subarea of domain.subareas) {
+      const item = document.createElement("li");
+      const rename = document.createElement("form");
+      rename.className = "domain-subarea-rename";
+      appendInputField(rename, "Subarea name", "name", "text", subarea.name, {
+        required: true,
+        maxLength: 80,
+      });
+      const save = document.createElement("button");
+      save.type = "submit";
+      save.textContent = "Rename";
+      rename.append(save);
+      rename.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        try {
+          await api(`/api/v1/domains/subareas/${subarea.id}`, {
+            method: "PATCH",
+            body: JSON.stringify({ name: rename.elements.name.value.trim() }),
+          });
+          await loadWorkspace();
+          showNotice("Subarea renamed. Goals remain connected.");
+        } catch (error) {
+          showNotice(error.message);
+        }
+      });
+
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "text-button";
+      remove.textContent = "Delete";
+      remove.addEventListener("click", async () => {
+        if (!window.confirm("Delete this subarea? Goals will stay in their life area without a subarea.")) return;
+        try {
+          const result = await api(`/api/v1/domains/subareas/${subarea.id}`, {
+            method: "DELETE",
+          });
+          await loadWorkspace();
+          showNotice(`Subarea deleted. ${result.unassigned_goals} goal${result.unassigned_goals === 1 ? "" : "s"} kept in the life area.`);
+        } catch (error) {
+          showNotice(error.message);
+        }
+      });
+      item.append(rename, remove);
+      list.append(item);
+    }
+
+    const create = document.createElement("form");
+    create.className = "domain-subarea-create";
+    appendInputField(create, "Add a subarea", "name", "text", "", {
+      required: true,
+      maxLength: 80,
+    });
+    const add = document.createElement("button");
+    add.type = "submit";
+    add.textContent = "Add subarea";
+    create.append(add);
+    create.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      try {
+        await api(`/api/v1/domains/${domain.code}/subareas`, {
+          method: "POST",
+          body: JSON.stringify({ name: create.elements.name.value.trim() }),
+        });
+        await loadWorkspace();
+        showNotice(`${domain.name} subarea added.`);
+      } catch (error) {
+        showNotice(error.message);
+      }
+    });
+    details.append(list, create);
+    return details;
+  });
+  $("#domain-subareas").replaceChildren(...groups);
+}
+
+function updateGoalSubareaOptions() {
+  const domainCode = $("#goal-form").elements.domain.value;
+  const select = $("#goal-subarea");
+  const previous = select.value;
+  const domain = workspaceDomains.find((item) => item.code === domainCode);
+  const subareas = domain?.subareas || [];
+  select.replaceChildren(new Option("No subarea", ""), ...subareas.map(
+    (subarea) => new Option(subarea.name, subarea.id),
+  ));
+  if (subareas.some((item) => item.id === previous)) select.value = previous;
+}
+
 function createMetricMeasurementForm(metric) {
   const form = document.createElement("form");
   form.className = "metric-measurement-form";
@@ -336,7 +432,7 @@ function renderGoals(goals) {
     title.textContent = goal.title;
     const domain = workspaceDomains.find((entry) => entry.code === goal.domain);
     const meta = document.createElement("small");
-    meta.textContent = `${domain?.name || goal.domain.replaceAll("_", " ")} · ${goal.status}${goal.target_date ? ` · target ${goal.target_date}` : ""}`;
+    meta.textContent = `${domain?.name || goal.domain.replaceAll("_", " ")}${goal.subarea_name ? ` · ${goal.subarea_name}` : ""} · ${goal.status}${goal.target_date ? ` · target ${goal.target_date}` : ""}`;
     item.append(title, meta);
     if (goal.starting_points?.length) {
       const startingPoints = document.createElement("ul");
@@ -599,9 +695,11 @@ async function loadWorkspace() {
   workspaceDomains = domains;
   workspaceGoals = goals;
   renderDomainSettings(domains);
+  renderDomainSubareas(domains);
   const activeDomains = domains.filter((domain) => domain.enabled);
-  const domainSelect = $("#goal-form select");
+  const domainSelect = $("#goal-form select[name='domain']");
   domainSelect.replaceChildren(...activeDomains.map((domain) => new Option(domain.name, domain.code)));
+  updateGoalSubareaOptions();
   $("#skill-domain").replaceChildren(new Option("Choose a domain", ""), ...activeDomains.map((domain) => new Option(domain.name, domain.code)));
   const activeGoals = goals.filter((goal) => goal.status === "active");
   $("#agent-goal").replaceChildren(...activeGoals.map((goal) => new Option(goal.title, goal.id)));
@@ -1636,9 +1734,12 @@ $("#goal-form").addEventListener("submit", async (event) => {
   const form = event.currentTarget;
   const payload = formObject(form);
   if (!payload.target_date) delete payload.target_date;
+  if (!payload.subarea_id) delete payload.subarea_id;
   try { await api("/api/v1/goals", { method: "POST", body: JSON.stringify(payload) }); form.reset(); await loadWorkspace(); showNotice("Goal saved."); }
   catch (error) { showNotice(error.message); }
 });
+
+$("#goal-form").elements.domain.addEventListener("change", updateGoalSubareaOptions);
 
 $("#campaign-form").addEventListener("submit", async (event) => {
   event.preventDefault();

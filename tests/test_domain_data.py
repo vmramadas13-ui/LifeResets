@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from liferesets.models import (
+    DomainSubarea,
     Evidence,
     Goal,
     GoalMetric,
@@ -86,8 +87,123 @@ def test_domains_are_private_and_user_configurable(client, test_user) -> None:
     assert exported["life_domains"]["career"]["name"] == "Work"
 
 
+def test_custom_subareas_can_be_used_on_goals_and_deleted_safely(
+    client, test_user, db_session: Session
+) -> None:
+    _login(client, test_user)
+    created = client.post(
+        "/api/v1/domains/career/subareas", json={"name": "  Product design  "}
+    )
+    assert created.status_code == 201, created.text
+    subarea = created.json()
+    assert subarea["name"] == "Product design"
+
+    domains = client.get("/api/v1/domains").json()
+    career = next(item for item in domains if item["code"] == "career")
+    assert career["subareas"] == [{"id": subarea["id"], "name": "Product design"}]
+    saved_settings = client.put(
+        "/api/v1/domains/settings",
+        json={
+            "domains": [
+                {key: domain[key] for key in ("code", "name", "sort_order", "enabled")}
+                for domain in domains
+            ]
+        },
+    )
+    assert saved_settings.status_code == 200
+    assert (
+        next(item for item in saved_settings.json() if item["code"] == "career")[
+            "subareas"
+        ]
+        == career["subareas"]
+    )
+    duplicate = client.post(
+        "/api/v1/domains/career/subareas", json={"name": "product DESIGN"}
+    )
+    assert duplicate.status_code == 409
+
+    foreign_user = User(email="other@example.com", password_hash="unused")
+    db_session.add(foreign_user)
+    db_session.flush()
+    foreign_subarea = DomainSubarea(
+        user_id=foreign_user.id, domain="career", name="Private area"
+    )
+    db_session.add(foreign_subarea)
+    db_session.commit()
+    visible_domains = client.get("/api/v1/domains").json()
+    assert all(
+        foreign_subarea.name != entry["name"]
+        for area in visible_domains
+        for entry in area["subareas"]
+    )
+    foreign_assignment = client.post(
+        "/api/v1/goals",
+        json={
+            "domain": "career",
+            "subarea_id": str(foreign_subarea.id),
+            "title": "Must not attach",
+        },
+    )
+    assert foreign_assignment.status_code == 404
+    assert (
+        client.patch(
+            f"/api/v1/domains/subareas/{foreign_subarea.id}",
+            json={"name": "Changed"},
+        ).status_code
+        == 404
+    )
+
+    renamed = client.patch(
+        f"/api/v1/domains/subareas/{subarea['id']}",
+        json={"name": "Product strategy"},
+    )
+    assert renamed.status_code == 200
+    assert renamed.json()["name"] == "Product strategy"
+    goal = client.post(
+        "/api/v1/goals",
+        json={
+            "domain": "career",
+            "subarea_id": subarea["id"],
+            "title": "Build a portfolio",
+        },
+    )
+    assert goal.status_code == 201, goal.text
+    assert goal.json()["subarea_name"] == "Product strategy"
+    finance_goal = client.post(
+        "/api/v1/goals", json={"domain": "finance", "title": "Review budget"}
+    )
+    assert finance_goal.status_code == 201
+    mismatch = client.patch(
+        f"/api/v1/goals/{finance_goal.json()['id']}",
+        json={"subarea_id": subarea["id"]},
+    )
+    assert mismatch.status_code == 422
+
+    exported = client.get("/api/v1/export").json()["domain_data"]
+    assert exported["subareas"] == [
+        {"id": subarea["id"], "domain": "career", "name": "Product strategy"}
+    ]
+    assert exported["goals"][0]["subarea_name"] == "Product strategy"
+
+    deleted = client.delete(f"/api/v1/domains/subareas/{subarea['id']}")
+    assert deleted.status_code == 200
+    assert deleted.json() == {"deleted": True, "unassigned_goals": 1}
+    goals = client.get("/api/v1/goals").json()
+    preserved = next(item for item in goals if item["id"] == goal.json()["id"])
+    assert preserved["domain"] == "career"
+    assert preserved["subarea_id"] is None
+    assert (
+        client.delete(f"/api/v1/domains/subareas/{foreign_subarea.id}").status_code
+        == 404
+    )
+
+
 def test_goal_task_habit_and_evidence_flow(client, test_user) -> None:
     _login(client, test_user)
+    today = date.today()
+    updated_on = today.isoformat()
+    appended_on = (today + timedelta(days=1)).isoformat()
+    backfilled_on = (today - timedelta(days=2)).isoformat()
     goal_response = client.post(
         "/api/v1/goals",
         json={
@@ -117,35 +233,35 @@ def test_goal_task_habit_and_evidence_flow(client, test_user) -> None:
 
     updated_metric = client.patch(
         f"/api/v1/metrics/{metric['id']}",
-        json={"current_value": "2", "measured_on": "2026-11-12", "confidence": 80},
+        json={"current_value": "2", "measured_on": updated_on, "confidence": 80},
     )
     assert updated_metric.status_code == 200, updated_metric.text
     assert updated_metric.json()["history"][0]["value"] == "2.0000"
-    assert updated_metric.json()["history"][0]["measured_on"] == "2026-11-12"
+    assert updated_metric.json()["history"][0]["measured_on"] == updated_on
     history_response = client.get(f"/api/v1/metrics/{metric['id']}/history")
     assert history_response.status_code == 200
     assert history_response.json()[0]["value"] == "2.0000"
-    assert history_response.json()[0]["measured_on"] == "2026-11-12"
+    assert history_response.json()[0]["measured_on"] == updated_on
     assert history_response.json()[0]["confidence"] == 80
 
     appended = client.post(
         f"/api/v1/metrics/{metric['id']}/measurements",
-        json={"value": "3", "measured_on": "2026-11-13", "confidence": 90},
+        json={"value": "3", "measured_on": appended_on, "confidence": 90},
     )
     assert appended.status_code == 201, appended.text
     refreshed = client.get(f"/api/v1/goals/{goal['id']}").json()["metrics"][0]
     assert refreshed["current_value"] == "3.0000"
     assert len(refreshed["history"]) == 3
-    assert refreshed["history"][0]["measured_on"] == "2026-11-13"
+    assert refreshed["history"][0]["measured_on"] == appended_on
     backfilled = client.post(
         f"/api/v1/metrics/{metric['id']}/measurements",
-        json={"value": "0", "measured_on": "2026-11-10", "confidence": 25},
+        json={"value": "0", "measured_on": backfilled_on, "confidence": 25},
     )
     assert backfilled.status_code == 201
     refreshed = client.get(f"/api/v1/goals/{goal['id']}").json()["metrics"][0]
     assert refreshed["current_value"] == "3.0000"
-    assert refreshed["history"][0]["measured_on"] == "2026-11-13"
-    assert refreshed["history"][-1]["measured_on"] == "2026-11-10"
+    assert refreshed["history"][0]["measured_on"] == appended_on
+    assert refreshed["history"][-1]["measured_on"] == backfilled_on
     export_metric = client.get("/api/v1/export").json()["domain_data"]["goals"][0][
         "metrics"
     ][0]

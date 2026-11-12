@@ -61,6 +61,9 @@ class User(Base):
     goals: Mapped[list[Goal]] = relationship(
         back_populates="user", cascade="all, delete-orphan", passive_deletes=True
     )
+    domain_subareas: Mapped[list[DomainSubarea]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", passive_deletes=True
+    )
     tasks: Mapped[list[Task]] = relationship(
         back_populates="user", cascade="all, delete-orphan", passive_deletes=True
     )
@@ -185,6 +188,32 @@ class AuditEvent(Base):
     user: Mapped[User | None] = relationship(back_populates="audit_events")
 
 
+class DomainSubarea(Base):
+    """A user-defined subarea attached to one built-in life area."""
+
+    __tablename__ = "domain_subareas"
+    __table_args__ = (
+        UniqueConstraint("user_id", "domain", "name", name="unique_user_subarea"),
+        CheckConstraint(
+            "domain IN ('career','fitness','finance','discipline','learning',"
+            "'mental_wellness','relationships','lifestyle')",
+            name="valid_subarea_domain",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    domain: Mapped[str] = mapped_column(String(32), nullable=False)
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+
+    user: Mapped[User] = relationship(back_populates="domain_subareas")
+    goals: Mapped[list[Goal]] = relationship(
+        back_populates="subarea", passive_deletes=True
+    )
+
+
 class Goal(Base):
     """A measurable outcome owned by one user and assigned to one domain."""
 
@@ -206,6 +235,12 @@ class Goal(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
+    subarea_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("domain_subareas.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+    )
     domain: Mapped[str] = mapped_column(String(32), nullable=False)
     title: Mapped[str] = mapped_column(String(160), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -220,6 +255,7 @@ class Goal(Base):
     )
 
     user: Mapped[User] = relationship(back_populates="goals")
+    subarea: Mapped[DomainSubarea | None] = relationship(back_populates="goals")
     metrics: Mapped[list[GoalMetric]] = relationship(
         back_populates="goal", cascade="all, delete-orphan", passive_deletes=True
     )

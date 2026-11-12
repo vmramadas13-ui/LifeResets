@@ -9,13 +9,14 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from liferesets.database import get_db
 from liferesets.models import (
     AuditEvent,
     AwakeningBaselineGoalLink,
+    DomainSubarea,
     Evidence,
     Goal,
     GoalMetric,
@@ -146,10 +147,25 @@ class DomainSettingsUpdate(BaseModel):
         return self
 
 
+class DomainSubareaInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=80)
+
+    @field_validator("name")
+    @classmethod
+    def trim_subarea_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Subarea name cannot be blank")
+        return value
+
+
 class GoalCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     domain: DomainCode
+    subarea_id: UUID | None = None
     title: str = Field(min_length=1, max_length=160)
     description: str | None = Field(default=None, max_length=5000)
     priority: int = Field(default=3, ge=1, le=5)
@@ -161,6 +177,7 @@ class GoalUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     title: str | None = Field(default=None, min_length=1, max_length=160)
+    subarea_id: UUID | None = None
     description: str | None = Field(default=None, max_length=5000)
     priority: int | None = Field(default=None, ge=1, le=5)
     status: GoalStatus | None = None
@@ -315,6 +332,16 @@ def _domain_payloads(db: Session, user_id: UUID) -> list[dict[str, object]]:
     saved = preferences.get(DOMAIN_SETTINGS_KEY, {})
     if not isinstance(saved, dict):
         saved = {}
+    subareas_by_domain: dict[str, list[dict[str, str]]] = {}
+    subareas = db.scalars(
+        select(DomainSubarea)
+        .where(DomainSubarea.user_id == user_id)
+        .order_by(DomainSubarea.domain, DomainSubarea.name, DomainSubarea.id)
+    ).all()
+    for subarea in subareas:
+        subareas_by_domain.setdefault(subarea.domain, []).append(
+            {"id": str(subarea.id), "name": subarea.name}
+        )
     entries = []
     for index, domain in enumerate(DOMAINS):
         override = saved.get(domain["code"], {})
@@ -335,6 +362,7 @@ def _domain_payloads(db: Session, user_id: UUID) -> list[dict[str, object]]:
                 "name": name,
                 "sort_order": sort_order,
                 "enabled": enabled,
+                "subareas": subareas_by_domain.get(domain["code"], []),
             }
         )
     return sorted(entries, key=lambda item: (item["sort_order"], item["code"]))
@@ -412,6 +440,8 @@ def _goal_payload(goal: Goal) -> dict[str, object]:
     return {
         "id": str(goal.id),
         "domain": goal.domain,
+        "subarea_id": str(goal.subarea_id) if goal.subarea_id else None,
+        "subarea_name": goal.subarea.name if goal.subarea is not None else None,
         "title": goal.title,
         "description": goal.description,
         "priority": goal.priority,
@@ -575,10 +605,16 @@ def export_domain_data(
     db: Session, user_id: UUID
 ) -> dict[str, list[dict[str, object]]]:
     """Return all account-owned domain data in a portable JSON shape."""
+    subareas = db.scalars(
+        select(DomainSubarea)
+        .where(DomainSubarea.user_id == user_id)
+        .order_by(DomainSubarea.domain, DomainSubarea.name, DomainSubarea.id)
+    ).all()
     goals = db.scalars(
         select(Goal)
         .where(Goal.user_id == user_id)
         .options(
+            selectinload(Goal.subarea),
             selectinload(Goal.metrics).selectinload(GoalMetric.measurements),
             selectinload(Goal.baseline_links).selectinload(
                 AwakeningBaselineGoalLink.baseline
@@ -600,6 +636,14 @@ def export_domain_data(
         .order_by(Evidence.captured_at, Evidence.id)
     ).all()
     return {
+        "subareas": [
+            {
+                "id": str(item.id),
+                "domain": item.domain,
+                "name": item.name,
+            }
+            for item in subareas
+        ],
         "goals": [_goal_payload(goal) for goal in goals],
         "tasks": [_task_payload(task) for task in tasks],
         "habits": [_habit_payload(habit) for habit in habits],
@@ -613,6 +657,96 @@ def list_domains(
 ) -> list[dict[str, object]]:
     """Return the signed-in user's names, order, and visibility for life areas."""
     return _domain_payloads(db, auth.user.id)
+
+
+@router.post("/domains/{domain}/subareas", status_code=201)
+def create_domain_subarea(
+    domain: DomainCode,
+    request: DomainSubareaInput,
+    auth: AuthenticatedWithCsrf,
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    """Create one named subarea under an account-owned built-in life area."""
+    duplicate = db.scalar(
+        select(DomainSubarea.id).where(
+            DomainSubarea.user_id == auth.user.id,
+            DomainSubarea.domain == domain,
+            func.lower(DomainSubarea.name) == request.name.casefold(),
+        )
+    )
+    if duplicate is not None:
+        raise HTTPException(
+            status_code=409, detail="A subarea with that name already exists"
+        )
+    subarea = DomainSubarea(user_id=auth.user.id, domain=domain, name=request.name)
+    db.add(subarea)
+    _audit(db, auth.user, "domain.subarea_created")
+    db.commit()
+    db.refresh(subarea)
+    return {"id": str(subarea.id), "domain": subarea.domain, "name": subarea.name}
+
+
+@router.patch("/domains/subareas/{subarea_id}")
+def update_domain_subarea(
+    subarea_id: UUID,
+    changes: DomainSubareaInput,
+    auth: AuthenticatedWithCsrf,
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    """Rename a subarea only when it belongs to the signed-in account."""
+    subarea = db.scalar(
+        select(DomainSubarea).where(
+            DomainSubarea.id == subarea_id,
+            DomainSubarea.user_id == auth.user.id,
+        )
+    )
+    if subarea is None:
+        raise _not_found()
+    duplicate = db.scalar(
+        select(DomainSubarea.id).where(
+            DomainSubarea.user_id == auth.user.id,
+            DomainSubarea.domain == subarea.domain,
+            DomainSubarea.id != subarea_id,
+            func.lower(DomainSubarea.name) == changes.name.casefold(),
+        )
+    )
+    if duplicate is not None:
+        raise HTTPException(
+            status_code=409, detail="A subarea with that name already exists"
+        )
+    subarea.name = changes.name
+    _audit(db, auth.user, "domain.subarea_renamed")
+    db.commit()
+    return {"id": str(subarea.id), "domain": subarea.domain, "name": subarea.name}
+
+
+@router.delete("/domains/subareas/{subarea_id}")
+def delete_domain_subarea(
+    subarea_id: UUID,
+    auth: AuthenticatedWithCsrf,
+    db: Session = Depends(get_db),
+) -> dict[str, int | bool]:
+    """Delete an owned subarea while preserving its goals without a subarea."""
+    subarea = db.scalar(
+        select(DomainSubarea).where(
+            DomainSubarea.id == subarea_id,
+            DomainSubarea.user_id == auth.user.id,
+        )
+    )
+    if subarea is None:
+        raise _not_found()
+    goals = db.scalars(
+        select(Goal).where(
+            Goal.user_id == auth.user.id,
+            Goal.subarea_id == subarea_id,
+        )
+    ).all()
+    for goal in goals:
+        goal.subarea_id = None
+    db.delete(subarea)
+    _audit(db, auth.user, "domain.subarea_deleted")
+    db.commit()
+    return {"deleted": True, "unassigned_goals": len(goals)}
 
 
 @router.put("/domains/settings")
@@ -651,6 +785,7 @@ def list_goals(
         select(Goal)
         .where(Goal.user_id == auth.user.id)
         .options(
+            selectinload(Goal.subarea),
             selectinload(Goal.metrics).selectinload(GoalMetric.measurements),
             selectinload(Goal.baseline_links).selectinload(
                 AwakeningBaselineGoalLink.baseline
@@ -678,9 +813,25 @@ def create_goal(
                 "message": "Choose an enabled life area for a new goal.",
             },
         )
+    subarea = None
+    if request.subarea_id is not None:
+        subarea = db.scalar(
+            select(DomainSubarea).where(
+                DomainSubarea.id == request.subarea_id,
+                DomainSubarea.user_id == auth.user.id,
+            )
+        )
+        if subarea is None:
+            raise _not_found()
+        if subarea.domain != request.domain:
+            raise HTTPException(
+                status_code=422,
+                detail="Choose a subarea within the selected life area.",
+            )
     goal = Goal(
         user_id=auth.user.id,
         domain=request.domain,
+        subarea_id=subarea.id if subarea is not None else None,
         title=request.title,
         description=request.description,
         priority=request.priority,
@@ -708,6 +859,7 @@ def get_goal(
         select(Goal)
         .where(Goal.id == goal_id, Goal.user_id == auth.user.id)
         .options(
+            selectinload(Goal.subarea),
             selectinload(Goal.metrics).selectinload(GoalMetric.measurements),
             selectinload(Goal.baseline_links).selectinload(
                 AwakeningBaselineGoalLink.baseline
@@ -730,11 +882,29 @@ def update_goal(
     goal = db.scalar(
         select(Goal)
         .where(Goal.id == goal_id, Goal.user_id == auth.user.id)
-        .options(selectinload(Goal.metrics).selectinload(GoalMetric.measurements))
+        .options(
+            selectinload(Goal.subarea),
+            selectinload(Goal.metrics).selectinload(GoalMetric.measurements),
+        )
     )
     if goal is None:
         raise _not_found()
-    for field, value in changes.model_dump(exclude_unset=True).items():
+    updates = changes.model_dump(exclude_unset=True)
+    if "subarea_id" in updates and updates["subarea_id"] is not None:
+        subarea = db.scalar(
+            select(DomainSubarea).where(
+                DomainSubarea.id == updates["subarea_id"],
+                DomainSubarea.user_id == auth.user.id,
+            )
+        )
+        if subarea is None:
+            raise _not_found()
+        if subarea.domain != goal.domain:
+            raise HTTPException(
+                status_code=422,
+                detail="Choose a subarea within the goal's life area.",
+            )
+    for field, value in updates.items():
         setattr(goal, field, value)
     _audit(db, auth.user, "goal.updated")
     db.commit()

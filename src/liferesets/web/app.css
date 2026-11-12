@@ -169,6 +169,12 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 #awakening-baseline-form { margin-top: 16px; }
 #awakening-baseline-value-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
 #awakening-baseline-value-fields[hidden] { display: none; }
+.domain-subareas { display: grid; gap: 2px; margin-top: 16px; }
+.domain-subareas > details { margin-top: 0; padding-top: 8px; border-top: 1px solid var(--line); }
+.domain-subarea-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.domain-subarea-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end; }
+.domain-subarea-list form, .domain-subarea-create { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: end; margin: 0; }
+.domain-subarea-list .text-button { min-height: 44px; }
 details { margin-top: 16px; padding-top: 14px; border-top: 2px solid var(--line); }
 summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-weight: 850; }
 details form { margin-top: 15px; }
@@ -379,6 +385,8 @@ section[id] { scroll-margin-top: 18px; }
   .task-create-form { grid-template-columns: 1fr; }
   .task-create-form label:first-child { grid-column: auto; }
   .task-create-form button { width: 100%; }
+  .domain-subarea-list li, .domain-subarea-list form, .domain-subarea-create { grid-template-columns: 1fr; }
+  .domain-subarea-list .text-button { justify-self: start; }
   .habit-check-in-form { grid-template-columns: 1fr; }
   .habit-check-in-form label:nth-child(2), .habit-check-in-actions { grid-column: auto; }
   .habit-check-in-actions { display: grid; grid-template-columns: 1fr 1fr; }

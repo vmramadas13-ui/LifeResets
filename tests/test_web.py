@@ -51,6 +51,8 @@ def test_web_shell_and_pwa_files_are_served() -> None:
         assert 'id="awakening-save-later"' in page.text
         assert 'id="awakening-assessment-panel"' in page.text
         assert 'id="awakening-baseline-panel"' in page.text
+        assert 'id="domain-subareas"' in page.text
+        assert 'id="goal-subarea"' in page.text
         assert 'id="awakening-baseline-consent"' in page.text
         assert 'id="awakening-baseline-form"' in page.text
         assert (
