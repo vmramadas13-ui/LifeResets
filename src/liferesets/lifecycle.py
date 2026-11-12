@@ -87,38 +87,67 @@ class AwakeningBaselineGoalLinkInput(BaseModel):
 
 AWAKENING_PROMPTS = (
     {
+        "focus": "Profile, priorities, and consent",
         "title": "Choose your focus",
         "prompt": (
-            "Which parts of life would you most like to give attention to right now?"
+            "Which parts of life matter most to you right now, and what would you "
+            "like this reset to help you change? Choose what to save using the "
+            "separate consent controls; you can skip this prompt."
         ),
     },
     {
-        "title": "Notice what is working",
-        "prompt": "What is already helping you, and what would you like to keep?",
-    },
-    {
-        "title": "Understand your capacity",
+        "focus": "Life map and current reality",
+        "title": "Map where you are now",
         "prompt": (
-            "What amount of time and energy usually feels realistic for a small change?"
+            "Across your life areas, what is going well, what feels difficult, and "
+            "where are you unsure? You can record a starting point or mark it "
+            "unknown; no number is required."
         ),
     },
     {
-        "title": "Spot the friction",
-        "prompt": "What tends to make it harder to follow through on plans?",
-    },
-    {
-        "title": "Find useful support",
+        "focus": "Goals, horizons, and milestones",
+        "title": "Describe what you want to change",
         "prompt": (
-            "What tools, routines, or kinds of support make a fresh start easier?"
+            "What longer-term outcome would matter to you, and what milestone could "
+            "show that you are moving toward it? Nothing is added as a goal until "
+            "you save it in Goals."
         ),
     },
     {
-        "title": "Pick a first step",
-        "prompt": "What is one small action that would feel manageable to try?",
+        "focus": "Capacity, constraints, and boundaries",
+        "title": "Make room for a realistic change",
+        "prompt": (
+            "What time, energy, responsibilities, or boundaries should your plan "
+            "respect? What size of first step feels sustainable?"
+        ),
     },
     {
-        "title": "Choose how to review",
-        "prompt": "How would you like to notice progress and adjust your plan?",
+        "focus": "Health and routines · optional",
+        "title": "Review health and routine starting points",
+        "prompt": (
+            "If you want to, consider fitness, sleep, wellbeing, or routines. What "
+            "would be useful to understand or improve? This is optional and is not "
+            "a diagnosis or a health score."
+        ),
+    },
+    {
+        "focus": "Finance, relationships, and lifestyle · optional",
+        "title": "Review other life areas",
+        "prompt": (
+            "If you want to, consider finances, relationships, and lifestyle. What "
+            "commitments or support would make change easier? Do not enter passwords "
+            "or access codes."
+        ),
+    },
+    {
+        "focus": "First 90-day campaign and first week",
+        "title": "Choose a first-week experiment",
+        "prompt": (
+            "What outcome would you like to work toward over 90 days, what is one "
+            "small first-week action, and when would you review it? Choose one "
+            "low-risk action or observation that could test an assumption. Nothing "
+            "is added to a campaign or daily plan until you save it there."
+        ),
     },
 )
 
@@ -265,6 +294,7 @@ def get_awakening(
         {
             "step": number,
             "day": number,
+            "focus": prompt["focus"],
             "title": prompt["title"],
             "prompt": prompt["prompt"],
             "status": stored[number].status if number in stored else "not_started",

@@ -843,6 +843,7 @@ function renderAwakening(awakening, selectedIndex = null) {
   $("#awakening-day-label").textContent = `Day ${step.day} of 7 · ${awakening.completed} completed`;
   $("#awakening-progress-fill").style.width = `${(resolved / awakening.steps.length) * 100}%`;
   progress.setAttribute("aria-valuenow", String(resolved));
+  $("#awakening-focus").textContent = step.focus;
   $("#awakening-question-title").textContent = step.title;
   $("#awakening-prompt").textContent = step.prompt;
   $("#awakening-answer").value = step.answer || "";
@@ -883,13 +884,15 @@ function renderAwakeningBaselines(awakening, step) {
       : null;
   const domains = workspaceDomains.filter((domain) => !allowedCodes || allowedCodes.has(domain.code));
   $("#awakening-baseline-title").textContent = step.day === 5
-    ? "Optional health and routine starting points"
+    ? "Optional health, sleep, and routine starting points"
     : step.day === 6
-      ? "Optional finance and lifestyle starting points"
+      ? "Optional finance, relationships, and lifestyle starting points"
       : "Starting points across your life areas";
   $("#awakening-baseline-intro").textContent = step.day === 2
-    ? "Add a number you already know for any area, or mark its overall starting point unknown. No target or overall score is created."
-    : "Add a measure if you choose, or mark an overall starting point unknown. You can skip this day and begin using the app. No value is assumed.";
+    ? "Review all your life areas. Add a number you already know, or mark a starting point unknown. No target or overall score is created."
+    : step.day === 5
+      ? "Optional: add a measure you choose, or mark it unknown. You can skip this section and begin using the app. No diagnosis or health score is created."
+      : "Optional: add a measure you choose, or mark it unknown. You can skip this section and begin using the app. No value is assumed.";
   $("#awakening-baseline-consent").checked = Boolean(awakening.baseline_storage_consent);
   const form = $("#awakening-baseline-form");
   const selectedDomain = domains.some((domain) => domain.code === form.elements.domain.value)

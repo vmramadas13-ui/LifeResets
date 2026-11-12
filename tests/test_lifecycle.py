@@ -58,6 +58,18 @@ def test_awakening_guides_seven_prompts_and_requires_consent_for_answers(
     assert initial["steps"][0]["day"] == 1
     assert initial["steps"][0]["title"] == "Choose your focus"
     assert initial["steps"][0]["prompt"]
+    assert [step["focus"] for step in initial["steps"]] == [
+        "Profile, priorities, and consent",
+        "Life map and current reality",
+        "Goals, horizons, and milestones",
+        "Capacity, constraints, and boundaries",
+        "Health and routines · optional",
+        "Finance, relationships, and lifestyle · optional",
+        "First 90-day campaign and first week",
+    ]
+    assert "mark it unknown" in initial["steps"][1]["prompt"]
+    assert "low-risk" in initial["steps"][6]["prompt"]
+    assert "until you save it there" in initial["steps"][6]["prompt"]
     assert initial["steps"][5]["status"] == "not_started"
     assert initial["storage_consent"] is False
     denied = client.patch(
