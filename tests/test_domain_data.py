@@ -1,9 +1,18 @@
+from datetime import date
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from liferesets.models import Evidence, Goal, GoalMetric, Habit, Task, User
+from liferesets.models import (
+    Evidence,
+    Goal,
+    GoalMetric,
+    Habit,
+    HabitCheckIn,
+    Task,
+    User,
+)
 
 
 def _login(client, test_user: dict[str, object]) -> None:
@@ -208,6 +217,56 @@ def test_goal_task_habit_and_evidence_flow(client, test_user) -> None:
     )
 
 
+def test_habit_check_ins_are_reversible_and_exported(client, test_user) -> None:
+    assert client.get("/api/v1/habits").status_code == 401
+    _login(client, test_user)
+    habit_response = client.post(
+        "/api/v1/habits",
+        json={
+            "cue": "after breakfast",
+            "action": "review one lesson",
+            "frequency": "daily",
+            "minimum_version": "review one note",
+            "recovery_action": "restart with one note",
+        },
+    )
+    assert habit_response.status_code == 201, habit_response.text
+    habit = habit_response.json()
+    assert habit["check_ins"] == []
+    day = date.today().isoformat()
+
+    completed = client.post(
+        f"/api/v1/habits/{habit['id']}/check-ins",
+        json={"status": "completed", "recorded_on": day},
+    )
+    assert completed.status_code == 201, completed.text
+    skipped = client.post(
+        f"/api/v1/habits/{habit['id']}/check-ins",
+        json={
+            "status": "skipped",
+            "recorded_on": day,
+            "reason": "Plans changed",
+        },
+    )
+    assert skipped.status_code == 201, skipped.text
+
+    history = client.get(f"/api/v1/habits/{habit['id']}/check-ins")
+    assert history.status_code == 200
+    assert [item["status"] for item in history.json()] == ["skipped", "completed"]
+    assert history.json()[0]["reason"] == "Plans changed"
+    listed = client.get("/api/v1/habits").json()[0]
+    assert len(listed["check_ins"]) == 2
+
+    paused = client.patch(f"/api/v1/habits/{habit['id']}", json={"is_active": False})
+    assert paused.status_code == 200
+    assert paused.json()["is_active"] is False
+    assert len(paused.json()["check_ins"]) == 2
+    resumed = client.patch(f"/api/v1/habits/{habit['id']}", json={"is_active": True})
+    assert resumed.status_code == 200
+    exported = client.get("/api/v1/export").json()["domain_data"]["habits"][0]
+    assert len(exported["check_ins"]) == 2
+
+
 def test_account_ownership_and_client_cannot_claim_verified_evidence(
     client, test_user, db_session: Session
 ) -> None:
@@ -223,8 +282,22 @@ def test_account_ownership_and_client_cannot_claim_verified_evidence(
         target_value=10,
         current_value=2,
     )
+    foreign_habit = Habit(
+        user_id=foreign_user.id,
+        cue="morning",
+        action="private routine",
+        frequency="daily",
+        minimum_version="one step",
+        recovery_action="try another day",
+    )
+    foreign_check_in = HabitCheckIn(
+        habit=foreign_habit,
+        recorded_on=date.today(),
+        status="completed",
+    )
     db_session.add(foreign_goal)
     db_session.add(foreign_metric)
+    db_session.add_all([foreign_habit, foreign_check_in])
     db_session.commit()
 
     assert client.get(f"/api/v1/goals/{foreign_goal.id}").status_code == 404
@@ -264,6 +337,14 @@ def test_account_ownership_and_client_cannot_claim_verified_evidence(
         ).status_code
         == 404
     )
+    assert client.get(f"/api/v1/habits/{foreign_habit.id}/check-ins").status_code == 404
+    assert (
+        client.post(
+            f"/api/v1/habits/{foreign_habit.id}/check-ins",
+            json={"status": "completed"},
+        ).status_code
+        == 404
+    )
 
 
 def test_list_endpoints_are_scoped_and_account_delete_cascades(
@@ -276,7 +357,7 @@ def test_list_endpoints_are_scoped_and_account_delete_cascades(
     task = client.post(
         "/api/v1/tasks", json={"goal_id": goal["id"], "title": "Practice"}
     ).json()
-    client.post(
+    habit = client.post(
         "/api/v1/habits",
         json={
             "goal_id": goal["id"],
@@ -286,6 +367,10 @@ def test_list_endpoints_are_scoped_and_account_delete_cascades(
             "minimum_version": "5 min",
             "recovery_action": "restart tomorrow",
         },
+    ).json()
+    client.post(
+        f"/api/v1/habits/{habit['id']}/check-ins",
+        json={"status": "completed", "recorded_on": date.today().isoformat()},
     )
     client.post(
         "/api/v1/evidence", json={"task_id": task["id"], "summary": "Session completed"}
@@ -311,5 +396,11 @@ def test_list_endpoints_are_scoped_and_account_delete_cascades(
     )
     assert (
         db_session.scalar(select(Evidence).where(Evidence.user_id == test_user["id"]))
+        is None
+    )
+    assert (
+        db_session.scalar(
+            select(HabitCheckIn).where(HabitCheckIn.habit_id == UUID(habit["id"]))
+        )
         is None
     )

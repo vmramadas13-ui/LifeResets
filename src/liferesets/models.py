@@ -356,6 +356,36 @@ class Habit(Base):
     )
 
     user: Mapped[User] = relationship(back_populates="habits")
+    check_ins: Mapped[list[HabitCheckIn]] = relationship(
+        back_populates="habit",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="HabitCheckIn.recorded_on",
+    )
+
+
+class HabitCheckIn(Base):
+    """A user-recorded habit outcome; later entries can correct earlier ones."""
+
+    __tablename__ = "habit_check_ins"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('completed','skipped')", name="valid_habit_checkin_status"
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    habit_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("habits.id", ondelete="CASCADE"), index=True
+    )
+    recorded_on: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+    habit: Mapped[Habit] = relationship(back_populates="check_ins")
 
 
 class Evidence(Base):

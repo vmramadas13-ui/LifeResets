@@ -19,6 +19,7 @@ from liferesets.models import (
     Goal,
     GoalMetric,
     Habit,
+    HabitCheckIn,
     MetricMeasurement,
     Profile,
     Task,
@@ -237,6 +238,27 @@ class HabitCreate(BaseModel):
         return self
 
 
+class HabitUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    is_active: bool
+
+
+class HabitCheckInInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["completed", "skipped"]
+    recorded_on: date = Field(default_factory=date.today)
+    reason: str | None = Field(default=None, max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def blank_reason_is_empty(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
+
+
 class EvidenceCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -395,7 +417,34 @@ def _habit_payload(habit: Habit) -> dict[str, object]:
         "minimum_version": habit.minimum_version,
         "recovery_action": habit.recovery_action,
         "is_active": habit.is_active,
+        "check_ins": [
+            _habit_checkin_payload(item)
+            for item in sorted(
+                habit.check_ins,
+                key=_habit_checkin_sort_key,
+                reverse=True,
+            )
+        ],
     }
+
+
+def _habit_checkin_payload(check_in: HabitCheckIn) -> dict[str, object]:
+    return {
+        "id": str(check_in.id),
+        "recorded_on": check_in.recorded_on.isoformat(),
+        "status": check_in.status,
+        "reason": check_in.reason,
+        "created_at": check_in.created_at.isoformat(),
+    }
+
+
+def _habit_checkin_sort_key(
+    check_in: HabitCheckIn,
+) -> tuple[date, datetime, str]:
+    created_at = check_in.created_at
+    if created_at.tzinfo is not None:
+        created_at = created_at.astimezone(UTC).replace(tzinfo=None)
+    return check_in.recorded_on, created_at, str(check_in.id)
 
 
 def _evidence_payload(evidence: Evidence) -> dict[str, object]:
@@ -780,6 +829,7 @@ def list_habits(
     habits = db.scalars(
         select(Habit)
         .where(Habit.user_id == auth.user.id)
+        .options(selectinload(Habit.check_ins))
         .order_by(Habit.created_at, Habit.id)
     ).all()
     return [_habit_payload(habit) for habit in habits]
@@ -816,6 +866,74 @@ def create_habit(
     _audit(db, auth.user, "habit.created")
     db.commit()
     return _habit_payload(habit)
+
+
+@router.patch("/habits/{habit_id}")
+def update_habit(
+    habit_id: UUID,
+    changes: HabitUpdate,
+    auth: AuthenticatedWithCsrf,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    """Pause or resume an owned habit without removing its history."""
+    habit = db.scalar(
+        select(Habit)
+        .where(Habit.id == habit_id, Habit.user_id == auth.user.id)
+        .options(selectinload(Habit.check_ins))
+    )
+    if habit is None:
+        raise _not_found()
+    habit.is_active = changes.is_active
+    _audit(db, auth.user, "habit.status_updated")
+    db.commit()
+    return _habit_payload(habit)
+
+
+@router.get("/habits/{habit_id}/check-ins")
+def list_habit_check_ins(
+    habit_id: UUID,
+    auth: Authenticated,
+    db: Session = Depends(get_db),
+) -> list[dict[str, object]]:
+    """Return the check-in history for one of the signed-in user's habits."""
+    habit = db.scalar(
+        select(Habit)
+        .where(Habit.id == habit_id, Habit.user_id == auth.user.id)
+        .options(selectinload(Habit.check_ins))
+    )
+    if habit is None:
+        raise _not_found()
+    return [
+        _habit_checkin_payload(item)
+        for item in sorted(habit.check_ins, key=_habit_checkin_sort_key, reverse=True)
+    ]
+
+
+@router.post("/habits/{habit_id}/check-ins", status_code=201)
+def record_habit_check_in(
+    habit_id: UUID,
+    check_in: HabitCheckInInput,
+    auth: AuthenticatedWithCsrf,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    """Append a completed or skipped habit entry with an optional note."""
+    habit = db.scalar(
+        select(Habit)
+        .where(Habit.id == habit_id, Habit.user_id == auth.user.id)
+        .options(selectinload(Habit.check_ins))
+    )
+    if habit is None:
+        raise _not_found()
+    record = HabitCheckIn(
+        recorded_on=check_in.recorded_on,
+        status=check_in.status,
+        reason=check_in.reason,
+    )
+    habit.check_ins.append(record)
+    _audit(db, auth.user, "habit.checked_in")
+    db.commit()
+    db.refresh(record)
+    return _habit_checkin_payload(record)
 
 
 @router.get("/evidence")

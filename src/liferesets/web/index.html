@@ -45,6 +45,23 @@
           <section class="saved-plan" aria-labelledby="saved-plan-title"><div class="task-pick-heading"><div><p class="eyebrow">YOUR SAVED CHOICES</p><h3 id="saved-plan-title">Plan actions</h3></div><span id="plan-energy-label" class="energy-pill">Steady energy</span></div><ul id="saved-plan-items" class="saved-plan-list" aria-live="polite"></ul><p id="saved-plan-empty" class="empty-note">Your saved actions will appear here.</p></section>
           <section class="recovery-panel" aria-labelledby="recovery-title"><div class="recovery-heading"><div><p class="eyebrow">WHEN YOU’RE READY TO RETURN</p><h3 id="recovery-title">Pick up what still matters</h3><p class="hint">Unfinished actions stay here as suggestions. Nothing moves into today unless you choose it.</p></div><button id="refresh-recovery" type="button" class="quiet">Check for suggestions</button></div><ul id="recovery-list" class="recovery-list" aria-live="polite"></ul></section>
         </section>
+        <section id="habits-section" class="card" aria-labelledby="habits-title">
+          <div class="section-heading"><div><p class="eyebrow">SMALL, REPEATABLE STEPS</p><h2 id="habits-title">Routines</h2></div></div>
+          <p class="hint">Record what happened at your pace. Skips are part of the record; there are no streak penalties.</p>
+          <ul id="habits" class="record-list" aria-live="polite"></ul>
+          <details><summary>Add a routine</summary>
+            <form id="habit-form">
+              <label>Connected goal (optional)<select name="goal_id" id="habit-goal"><option value="">No goal linked</option></select></label>
+              <label>Cue<input name="cue" maxlength="160" placeholder="After breakfast" required></label>
+              <label>Action<input name="action" maxlength="240" placeholder="Review one lesson" required></label>
+              <label>Frequency<select name="frequency" id="habit-frequency"><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="custom">Custom</option></select></label>
+              <label id="habit-custom-schedule-field" hidden>Custom schedule<input name="custom_schedule" maxlength="160" placeholder="Tuesday and Saturday"></label>
+              <label>Minimum version<input name="minimum_version" maxlength="240" placeholder="Review one note" required></label>
+              <label>Gentle restart action<input name="recovery_action" maxlength="240" placeholder="Restart with one note" required></label>
+              <button type="submit">Save routine</button>
+            </form>
+          </details>
+        </section>
         <section id="awakening-section" class="card" aria-labelledby="awakening-title">
           <p class="eyebrow">A GENTLE SEVEN-DAY START</p>
           <h2 id="awakening-title"><span data-game-term="Awakening" data-standard-term="Onboarding">Awakening</span></h2>

@@ -378,14 +378,142 @@ function renderGoals(goals) {
   $("#goals").replaceChildren(...rows);
 }
 
+function createHabitCheckInForm(habit) {
+  const form = document.createElement("form");
+  form.className = "habit-check-in-form";
+  const dateLabel = document.createElement("label");
+  dateLabel.textContent = "Day";
+  const date = document.createElement("input");
+  date.type = "date";
+  date.name = "recorded_on";
+  date.value = localDateString();
+  date.required = true;
+  dateLabel.append(date);
+  const reasonLabel = document.createElement("label");
+  reasonLabel.textContent = "Optional note";
+  const reason = document.createElement("textarea");
+  reason.name = "reason";
+  reason.maxLength = 500;
+  reason.rows = 2;
+  reasonLabel.append(reason);
+  const actions = document.createElement("div");
+  actions.className = "habit-check-in-actions";
+  for (const [status, label] of [["completed", "Done"], ["skipped", "Skip"]]) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = label;
+    if (status === "skipped") button.className = "quiet";
+    button.addEventListener("click", async () => {
+      if (!date.value) {
+        date.reportValidity();
+        return;
+      }
+      const payload = { status, recorded_on: date.value };
+      if (reason.value.trim()) payload.reason = reason.value.trim();
+      actions.querySelectorAll("button").forEach((item) => { item.disabled = true; });
+      try {
+        await api(`/api/v1/habits/${habit.id}/check-ins`, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        await loadWorkspace();
+        showNotice(status === "completed" ? "Routine recorded." : "Skip recorded. You can restart whenever you choose.");
+      } catch (error) {
+        actions.querySelectorAll("button").forEach((item) => { item.disabled = false; });
+        showNotice(error.message);
+      }
+    });
+    actions.append(button);
+  }
+  form.append(dateLabel, reasonLabel, actions);
+  return form;
+}
+
+function renderHabits(habits) {
+  const rows = habits.map((habit) => {
+    const item = document.createElement("li");
+    const title = document.createElement("strong");
+    title.textContent = habit.action;
+    const frequency = habit.frequency === "custom" ? habit.custom_schedule : habit.frequency;
+    const cue = document.createElement("small");
+    cue.textContent = `${habit.cue} · ${frequency || habit.frequency}${habit.is_active ? " · Active" : " · Paused"}`;
+    const minimum = document.createElement("small");
+    minimum.textContent = `Small version: ${habit.minimum_version}`;
+    const restart = document.createElement("small");
+    restart.textContent = `Restart idea: ${habit.recovery_action}`;
+    item.append(title, cue, minimum, restart);
+
+    const controls = document.createElement("div");
+    controls.className = "item-actions";
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "quiet";
+    toggle.textContent = habit.is_active ? "Pause routine" : "Resume routine";
+    toggle.addEventListener("click", async () => {
+      toggle.disabled = true;
+      try {
+        await api(`/api/v1/habits/${habit.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ is_active: !habit.is_active }),
+        });
+        await loadWorkspace();
+        showNotice(habit.is_active ? "Routine paused. Its history is kept." : "Routine resumed.");
+      } catch (error) {
+        toggle.disabled = false;
+        showNotice(error.message);
+      }
+    });
+    controls.append(toggle);
+    item.append(controls);
+
+    const recentCheckIns = habit.check_ins.slice(0, 7);
+    if (habit.is_active) {
+      const today = localDateString();
+      const todayEntry = habit.check_ins.find((entry) => entry.recorded_on === today);
+      const todayStatus = document.createElement("small");
+      todayStatus.textContent = todayEntry
+        ? `Today: ${todayEntry.status === "completed" ? "Done" : "Skipped"}`
+        : "Today: not recorded";
+      item.append(todayStatus, createHabitCheckInForm(habit));
+    } else {
+      const paused = document.createElement("small");
+      paused.textContent = "Paused. No check-ins are needed until you resume it.";
+      item.append(paused);
+    }
+    if (recentCheckIns.length) {
+      const history = document.createElement("details");
+      const summary = document.createElement("summary");
+      summary.textContent = "Recent check-ins";
+      const entries = document.createElement("ul");
+      entries.className = "record-list";
+      for (const entry of recentCheckIns) {
+        const line = document.createElement("li");
+        const label = document.createElement("small");
+        label.textContent = `${entry.recorded_on} · ${entry.status === "completed" ? "Done" : "Skipped"}${entry.reason ? ` · ${entry.reason}` : ""}`;
+        line.append(label);
+        entries.append(line);
+      }
+      history.append(summary, entries);
+      item.append(history);
+    }
+    return item;
+  });
+  if (!rows.length) {
+    const empty = document.createElement("li");
+    empty.textContent = "No routines yet. Start with a small action you can repeat.";
+    rows.push(empty);
+  }
+  $("#habits").replaceChildren(...rows);
+}
+
 async function loadWorkspace() {
   $("#auth").hidden = true;
   $("#workspace").hidden = false;
   $("#logout").hidden = false;
   if (!$("#daily-plan-date").value) $("#daily-plan-date").value = localDateString();
   const planDate = $("#daily-plan-date").value;
-  const [domains, goals, preview, rpg, insights, inbox, awakening, campaigns, reviews, tasks, currentPlan, recovery, skills, chronicle, agentActions] = await Promise.all([
-    api("/api/v1/domains"), api("/api/v1/goals"), api("/api/v1/plans/preview"), api("/api/v1/rpg/status"), api("/api/v1/insights/progress"), api("/api/v1/notifications/inbox"),
+  const [domains, goals, habits, preview, rpg, insights, inbox, awakening, campaigns, reviews, tasks, currentPlan, recovery, skills, chronicle, agentActions] = await Promise.all([
+    api("/api/v1/domains"), api("/api/v1/goals"), api("/api/v1/habits"), api("/api/v1/plans/preview"), api("/api/v1/rpg/status"), api("/api/v1/insights/progress"), api("/api/v1/notifications/inbox"),
     api("/api/v1/onboarding/awakening"), api("/api/v1/campaigns"), api("/api/v1/reviews"), api("/api/v1/tasks"),
     api(`/api/v1/daily-plans/${planDate}`), api(`/api/v1/daily-plans/${planDate}/recovery`),
     api("/api/v1/rpg/skills"), api("/api/v1/rpg/chronicle"), api("/api/v1/agent/actions"),
@@ -399,11 +527,13 @@ async function loadWorkspace() {
   const activeGoals = goals.filter((goal) => goal.status === "active");
   $("#agent-goal").replaceChildren(...activeGoals.map((goal) => new Option(goal.title, goal.id)));
   $("#task-goal").replaceChildren(new Option("No goal selected", ""), ...activeGoals.map((goal) => new Option(goal.title, goal.id)));
+  $("#habit-goal").replaceChildren(new Option("No goal linked", ""), ...activeGoals.map((goal) => new Option(goal.title, goal.id)));
   $("#agent-form button").disabled = activeGoals.length === 0;
   workspaceTasks = tasks;
   dailyPlan = currentPlan;
   workspaceProgress = rpg;
   renderGoals(goals);
+  renderHabits(habits);
   renderPlan(preview);
   renderDailyPlan(currentPlan);
   renderRecovery(recovery);
@@ -770,6 +900,34 @@ $("#domain-settings-form").addEventListener("submit", async (event) => {
     });
     await loadWorkspace();
     showNotice("Life area names, order, and visibility saved.");
+  } catch (error) {
+    showNotice(error.message);
+  }
+});
+
+$("#habit-frequency").addEventListener("change", () => {
+  const custom = $("#habit-frequency").value === "custom";
+  $("#habit-custom-schedule-field").hidden = !custom;
+  $("#habit-form").elements.custom_schedule.required = custom;
+});
+
+$("#habit-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const payload = formObject(form);
+  if (!payload.goal_id) delete payload.goal_id;
+  if (payload.frequency !== "custom" || !payload.custom_schedule.trim()) {
+    delete payload.custom_schedule;
+  } else {
+    payload.custom_schedule = payload.custom_schedule.trim();
+  }
+  try {
+    await api("/api/v1/habits", { method: "POST", body: JSON.stringify(payload) });
+    form.reset();
+    $("#habit-custom-schedule-field").hidden = true;
+    form.elements.custom_schedule.required = false;
+    await loadWorkspace();
+    showNotice("Routine saved. You can check in without keeping a streak.");
   } catch (error) {
     showNotice(error.message);
   }
