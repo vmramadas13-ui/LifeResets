@@ -188,6 +188,7 @@ function appendInputField(form, caption, name, type, value = "", settings = {}) 
   if (settings.max !== undefined) input.max = String(settings.max);
   if (settings.step !== undefined) input.step = String(settings.step);
   if (settings.maxLength !== undefined) input.maxLength = settings.maxLength;
+  if (settings.disabled) input.disabled = true;
   label.append(text, input);
   form.append(label);
   return input;
@@ -425,6 +426,132 @@ function createMetricForm(goal) {
   return form;
 }
 
+function createGoalEditForm(goal) {
+  const form = document.createElement("form");
+  form.className = "goal-edit-form";
+  appendInputField(form, "Goal title", "title", "text", goal.title, {
+    required: true,
+    maxLength: 160,
+  });
+  const descriptionLabel = document.createElement("label");
+  const descriptionCaption = document.createElement("span");
+  descriptionCaption.textContent = "Description (optional)";
+  const description = document.createElement("textarea");
+  description.name = "description";
+  description.maxLength = 5000;
+  description.value = goal.description || "";
+  descriptionLabel.append(descriptionCaption, description);
+  form.append(descriptionLabel);
+
+  appendInputField(form, "Priority (1–5)", "priority", "number", goal.priority, {
+    required: true,
+    min: 1,
+    max: 5,
+    step: 1,
+  });
+  const statusLabel = document.createElement("label");
+  const statusCaption = document.createElement("span");
+  statusCaption.textContent = "Status";
+  const status = document.createElement("select");
+  status.name = "status";
+  for (const value of ["active", "paused", "completed", "archived"]) {
+    status.add(new Option(value[0].toUpperCase() + value.slice(1), value));
+  }
+  status.value = goal.status;
+  statusLabel.append(statusCaption, status);
+  form.append(statusLabel);
+  appendInputField(form, "Target date (optional)", "target_date", "date", goal.target_date || "");
+
+  const subareaLabel = document.createElement("label");
+  const subareaCaption = document.createElement("span");
+  subareaCaption.textContent = "Subarea (optional)";
+  const subarea = document.createElement("select");
+  subarea.name = "subarea_id";
+  subarea.add(new Option("No subarea", ""));
+  const domain = workspaceDomains.find((item) => item.code === goal.domain);
+  for (const item of domain?.subareas || []) {
+    subarea.add(new Option(item.name, item.id));
+  }
+  subarea.value = goal.subarea_id || "";
+  subareaLabel.append(subareaCaption, subarea);
+  form.append(subareaLabel);
+
+  const save = document.createElement("button");
+  save.type = "submit";
+  save.textContent = "Save goal changes";
+  form.append(save);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const payload = formObject(form);
+    payload.priority = Number(payload.priority);
+    payload.description = payload.description.trim() || null;
+    payload.target_date = payload.target_date || null;
+    payload.subarea_id = payload.subarea_id || null;
+    try {
+      await api(`/api/v1/goals/${goal.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+      await loadWorkspace();
+      showNotice("Goal changes saved.");
+    } catch (error) {
+      showNotice(error.message);
+    }
+  });
+  return form;
+}
+
+function createMetricEditForm(metric) {
+  const form = document.createElement("form");
+  form.className = "metric-edit-form";
+  const hasHistory = metric.history.length > 0;
+  appendInputField(form, "Measure name", "name", "text", metric.name, {
+    required: true,
+    maxLength: 120,
+  });
+  appendInputField(form, "Unit", "unit", "text", metric.unit, {
+    required: true,
+    maxLength: 40,
+    disabled: hasHistory,
+  });
+  if (hasHistory) {
+    const unitHint = document.createElement("p");
+    unitHint.className = "field-hint";
+    unitHint.textContent = "This measure has dated values, so its unit is locked to keep its history accurate.";
+    form.append(unitHint);
+  }
+  appendInputField(form, "Starting value (optional)", "baseline_value", "number", metric.baseline_value ?? "", {
+    step: "any",
+  });
+  appendInputField(form, "Target value", "target_value", "number", metric.target_value, {
+    required: true,
+    step: "any",
+  });
+  appendInputField(form, "Target date (optional)", "target_date", "date", metric.target_date || "");
+
+  const save = document.createElement("button");
+  save.type = "submit";
+  save.textContent = "Save measure changes";
+  form.append(save);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const payload = formObject(form);
+    payload.baseline_value = payload.baseline_value || null;
+    payload.target_date = payload.target_date || null;
+    try {
+      await api(`/api/v1/metrics/${metric.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+      await loadWorkspace();
+      showNotice("Measure changes saved. Dated history remains unchanged.");
+    } catch (error) {
+      showNotice(error.message);
+    }
+  });
+  return form;
+}
+
 function renderGoals(goals) {
   const rows = goals.map((goal) => {
     const item = document.createElement("li");
@@ -434,6 +561,11 @@ function renderGoals(goals) {
     const meta = document.createElement("small");
     meta.textContent = `${domain?.name || goal.domain.replaceAll("_", " ")}${goal.subarea_name ? ` · ${goal.subarea_name}` : ""} · ${goal.status}${goal.target_date ? ` · target ${goal.target_date}` : ""}`;
     item.append(title, meta);
+    const editGoal = document.createElement("details");
+    const editGoalSummary = document.createElement("summary");
+    editGoalSummary.textContent = "Edit goal";
+    editGoal.append(editGoalSummary, createGoalEditForm(goal));
+    item.append(editGoal);
     if (goal.starting_points?.length) {
       const startingPoints = document.createElement("ul");
       startingPoints.className = "goal-starting-points";
@@ -473,7 +605,11 @@ function renderGoals(goals) {
         const addSummary = document.createElement("summary");
         addSummary.textContent = "Add a measurement";
         addMeasurement.append(addSummary, createMetricMeasurementForm(metric));
-        details.append(summary, confidence, history, addMeasurement);
+        const editMetric = document.createElement("details");
+        const editMetricSummary = document.createElement("summary");
+        editMetricSummary.textContent = "Edit measure";
+        editMetric.append(editMetricSummary, createMetricEditForm(metric));
+        details.append(summary, confidence, history, editMetric, addMeasurement);
         metricItem.append(details);
         metrics.append(metricItem);
       }

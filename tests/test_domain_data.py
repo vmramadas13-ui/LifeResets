@@ -231,6 +231,41 @@ def test_goal_task_habit_and_evidence_flow(client, test_user) -> None:
     assert metric["history"][0]["value"] == "1.0000"
     assert metric["history"][0]["confidence"] == 70
 
+    goal_edit = client.patch(
+        f"/api/v1/goals/{goal['id']}",
+        json={
+            "title": "  Keep a steady study practice  ",
+            "description": "  A realistic routine.  ",
+            "priority": 2,
+            "target_date": "2027-07-30",
+        },
+    )
+    assert goal_edit.status_code == 200, goal_edit.text
+    assert goal_edit.json()["title"] == "Keep a steady study practice"
+    assert goal_edit.json()["description"] == "A realistic routine."
+    assert goal_edit.json()["priority"] == 2
+    assert goal_edit.json()["target_date"] == "2027-07-30"
+
+    metric_edit = client.patch(
+        f"/api/v1/metrics/{metric['id']}",
+        json={
+            "name": "  Focused study sessions  ",
+            "baseline_value": "0.5",
+            "target_value": "12",
+            "target_date": "2027-07-15",
+        },
+    )
+    assert metric_edit.status_code == 200, metric_edit.text
+    assert metric_edit.json()["name"] == "Focused study sessions"
+    assert metric_edit.json()["baseline_value"] == "0.5000"
+    assert metric_edit.json()["target_value"] == "12.0000"
+    assert metric_edit.json()["history"][0]["value"] == "1.0000"
+    unit_change = client.patch(
+        f"/api/v1/metrics/{metric['id']}", json={"unit": "hours"}
+    )
+    assert unit_change.status_code == 409
+    assert "unit cannot change" in unit_change.json()["error"]["message"].lower()
+
     updated_metric = client.patch(
         f"/api/v1/metrics/{metric['id']}",
         json={"current_value": "2", "measured_on": updated_on, "confidence": 80},
@@ -331,6 +366,28 @@ def test_goal_task_habit_and_evidence_flow(client, test_user) -> None:
         client.get("/api/v1/export").json()["domain_data"]["evidence"][0]["id"]
         == evidence["id"]
     )
+
+
+def test_metric_unit_can_change_before_first_measurement(client, test_user) -> None:
+    _login(client, test_user)
+    goal = client.post(
+        "/api/v1/goals",
+        json={
+            "domain": "learning",
+            "title": "Practice regularly",
+            "metrics": [
+                {"name": "Practice time", "unit": "minutes", "target_value": "60"}
+            ],
+        },
+    )
+    assert goal.status_code == 201, goal.text
+    metric = goal.json()["metrics"][0]
+
+    changed = client.patch(f"/api/v1/metrics/{metric['id']}", json={"unit": "hours"})
+
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["unit"] == "hours"
+    assert changed.json()["history"] == []
 
 
 def test_habit_check_ins_are_reversible_and_exported(client, test_user) -> None:

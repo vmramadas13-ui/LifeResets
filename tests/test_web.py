@@ -37,6 +37,11 @@ def test_web_shell_and_pwa_files_are_served() -> None:
         assert 'name="reminder_preference"' in page.text
         app_script = client.get("/static/app.js")
         assert app_script.status_code == 200
+        assert 'editGoalSummary.textContent = "Edit goal"' in app_script.text
+        assert 'editMetricSummary.textContent = "Edit measure"' in app_script.text
+        assert 'method: "PATCH"' in app_script.text
+        assert "unit is locked to keep its history accurate" in app_script.text
+        assert "Dated history remains unchanged." in app_script.text
         assert "Turn next step into a task" in app_script.text
         assert "Link to an active goal" in app_script.text
         assert (

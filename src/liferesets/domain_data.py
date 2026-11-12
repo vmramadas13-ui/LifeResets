@@ -190,10 +190,26 @@ class GoalUpdate(BaseModel):
             raise ValueError("This field cannot be null")
         return value
 
+    @field_validator("title")
+    @classmethod
+    def trim_title(cls, value: str | None) -> str | None:
+        value = value.strip() if value is not None else value
+        if value == "":
+            raise ValueError("Goal title cannot be blank")
+        return value
+
+    @field_validator("description")
+    @classmethod
+    def trim_description(cls, value: str | None) -> str | None:
+        value = value.strip() if value is not None else value
+        return value or None
+
 
 class MetricUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    unit: str | None = Field(default=None, min_length=1, max_length=40)
     baseline_value: Decimal | None = Field(
         default=None, max_digits=16, decimal_places=4, allow_inf_nan=False
     )
@@ -207,11 +223,19 @@ class MetricUpdate(BaseModel):
     measured_on: date | None = None
     target_date: date | None = None
 
-    @field_validator("target_value", mode="before")
+    @field_validator("name", "unit", "target_value", mode="before")
     @classmethod
-    def reject_null_target(cls, value: object) -> object:
+    def reject_null_required_fields(cls, value: object) -> object:
         if value is None:
-            raise ValueError("Target value cannot be null")
+            raise ValueError("This field cannot be null")
+        return value
+
+    @field_validator("name", "unit")
+    @classmethod
+    def trim_labels(cls, value: str | None) -> str | None:
+        value = value.strip() if value is not None else value
+        if value == "":
+            raise ValueError("This field cannot be blank")
         return value
 
 
@@ -944,10 +968,19 @@ def update_goal_metric(
         select(GoalMetric)
         .join(Goal, Goal.id == GoalMetric.goal_id)
         .where(GoalMetric.id == metric_id, Goal.user_id == auth.user.id)
+        .options(selectinload(GoalMetric.measurements))
     )
     if metric is None:
         raise _not_found()
     updates = changes.model_dump(exclude_unset=True)
+    if "unit" in updates and updates["unit"] != metric.unit and metric.measurements:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "A measure's unit cannot change after dated values exist. "
+                "Add a separate measure to preserve the history."
+            ),
+        )
     measured_on = updates.pop("measured_on", None)
     confidence = updates.pop("confidence", None)
     current_value_sent = "current_value" in changes.model_fields_set
@@ -981,6 +1014,7 @@ def update_goal_metric(
     db.commit()
     if measurement_record is not None:
         db.refresh(measurement_record)
+    db.refresh(metric)
     return _metric_payload(metric)
 
 
