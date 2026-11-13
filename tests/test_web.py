@@ -35,6 +35,12 @@ def test_web_shell_and_pwa_files_are_served() -> None:
         assert 'id="theme-toggle"' in page.text
         assert 'id="motion-toggle"' in page.text
         assert 'id="language-toggle"' in page.text
+        assert 'id="account-data-section"' in page.text
+        assert 'id="download-account-export"' in page.text
+        assert 'id="account-deletion-preview"' in page.text
+        assert 'id="account-delete-form"' in page.text
+        assert "no automatic expiry" in page.text
+        assert 'name="confirmation" type="text"' in page.text
         assert (
             'name="viewport" content="width=device-width, initial-scale=1, '
             'viewport-fit=cover"' in page.text
@@ -84,6 +90,9 @@ def test_web_shell_and_pwa_files_are_served() -> None:
         assert "daily-reflection-delete" in app_script.text
         assert "/reflection`" in app_script.text
         assert "function syncTaskDomainChoice()" in app_script.text
+        assert 'api("/api/v1/export")' in app_script.text
+        assert 'api("/api/v1/account", { method: "DELETE"' in app_script.text
+        assert "Manually saved encrypted backups remain" in app_script.text
         assert "taskDomainSelect.disabled = false" in app_script.text
         assert "Save and continue" in app_script.text
         assert "function setReviewStep(index)" in app_script.text

@@ -15,6 +15,12 @@ This repository is a local development build. Do not expose it to a public netwo
 
 Keep `.env` and database files local. Never include credentials, personal exports, or populated databases in commits or issue reports. Logs must not include passwords, session tokens, request bodies, CORE questions, or private measurements.
 
+## Account export and deletion
+
+The signed-in workspace can download `/api/v1/export` as a readable JSON file. It contains `account`, `profile`, `consents`, `audit`, `domain_data`, `lifecycle_data`, `daily_plans`, `daily_reflections`, `quests`, `character_data`, and `agent_actions`. It excludes password hashes and session tokens; keep the downloaded file private.
+
+The in-app deletion preview lists the account records removed. Deletion requires the current password, CSRF protection, and the exact phrase `DELETE MY ACCOUNT`; a checkbox records that the user has read the warning. Successful deletion removes the account and cascaded data and leaves one minimal system audit event without the account ID. It cannot remove encrypted `.lrbak` files saved manually outside the app. Those files have no automatic expiry date and remain until the user deletes them. The completion message repeats this retention detail; there is no retained-backup expiry date to report.
+
 ## Release procedure
 
 Use a focused branch. Review schema and data export/deletion changes together. Require local checks and the GitHub Actions checks to pass. Merge only a green branch. Confirm the target revision and documented rollback behavior before applying migrations to any user data. Run the release against a disposable copy first.

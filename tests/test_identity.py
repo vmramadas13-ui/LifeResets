@@ -208,6 +208,19 @@ def test_export_includes_user_data_but_excludes_credentials(
     assert payload["profile"]["updated_at"].endswith("+00:00")
     assert payload["consents"][0]["purpose"] == "ai_processing"
     assert payload["consents"][0]["id"]
+    assert {
+        "account",
+        "profile",
+        "consents",
+        "audit",
+        "domain_data",
+        "lifecycle_data",
+        "daily_plans",
+        "daily_reflections",
+        "quests",
+        "character_data",
+        "agent_actions",
+    } <= payload.keys()
     assert "data.exported" in [event["action"] for event in payload["audit"]]
     assert "password_hash" not in response.text
     assert "token_hash" not in response.text

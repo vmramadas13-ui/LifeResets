@@ -2759,6 +2759,50 @@ $("#language-toggle").addEventListener("change", (event) => {
   renderProgress(workspaceProgress);
 });
 
+$("#download-account-export").addEventListener("click", async () => {
+  const status = $("#account-export-state");
+  status.textContent = "Preparing your account export…";
+  try {
+    const data = await api("/api/v1/export");
+    const file = new Blob([`${JSON.stringify(data, null, 2)}\n`], { type: "application/json" });
+    const url = URL.createObjectURL(file);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `LifeResets-account-export-${localDateString()}.json`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    status.textContent = "Your account export was downloaded as a readable JSON file. Keep it somewhere private.";
+  } catch (error) {
+    status.textContent = `Export could not be downloaded: ${error.message}`;
+  }
+});
+
+$("#account-delete-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const submit = $("#account-delete-submit");
+  const status = $("#account-delete-state");
+  const payload = formObject(form);
+  delete payload.acknowledged;
+  submit.disabled = true;
+  status.textContent = "Deleting your account…";
+  try {
+    await api("/api/v1/account", { method: "DELETE", body: JSON.stringify(payload) });
+    form.reset();
+    status.textContent = "Account deleted.";
+    $("#workspace").hidden = true;
+    $("#auth").hidden = false;
+    $("#logout").hidden = true;
+    showNotice("Your account was deleted. Manually saved encrypted backups remain until you delete them; they do not have an automatic expiry date.");
+  } catch (error) {
+    status.textContent = `Account was not deleted: ${error.message}`;
+  } finally {
+    submit.disabled = false;
+  }
+});
+
 $("#refresh-goals").addEventListener("click", () => loadWorkspace().catch((error) => showNotice(error.message)));
 $("#refresh-plan").addEventListener("click", async () => {
   try { renderPlan(await api("/api/v1/plans/preview")); showNotice("Plan preview refreshed. Nothing was saved."); }
