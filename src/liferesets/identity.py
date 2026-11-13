@@ -45,6 +45,7 @@ class ProfileUpdate(BaseModel):
 
     display_name: str | None = Field(default=None, min_length=1, max_length=80)
     timezone: str | None = Field(default=None, min_length=1, max_length=100)
+    preferred_address: str | None = Field(default=None, min_length=1, max_length=40)
 
     @field_validator("timezone", mode="before")
     @classmethod
@@ -56,6 +57,16 @@ class ProfileUpdate(BaseModel):
         except ZoneInfoNotFoundError as error:
             raise ValueError("Unknown timezone") from error
         return value
+
+    @field_validator("preferred_address", mode="before")
+    @classmethod
+    def validate_preferred_address(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError("Preferred address must be text")
+        cleaned = value.strip()
+        return cleaned or None
 
 
 class ConsentInput(BaseModel):
@@ -83,12 +94,15 @@ def _profile_payload(profile: Profile | None) -> dict[str, object]:
             "display_name": None,
             "timezone": "UTC",
             "preferences": {},
+            "preferred_address": "VEE",
             "updated_at": None,
         }
     return {
         "display_name": profile.display_name,
         "timezone": profile.timezone,
         "preferences": profile.preferences,
+        "preferred_address": (profile.preferences or {}).get("preferred_address")
+        or "VEE",
         "updated_at": _iso_utc(profile.updated_at),
     }
 
@@ -175,7 +189,16 @@ def update_profile(
     if profile is None:
         profile = Profile(user_id=auth.user.id)
         db.add(profile)
-    for field, value in changes.model_dump(exclude_unset=True).items():
+    updates = changes.model_dump(exclude_unset=True)
+    if "preferred_address" in changes.model_fields_set:
+        preferences = dict(profile.preferences or {})
+        preferred_address = updates.pop("preferred_address")
+        if preferred_address is None:
+            preferences.pop("preferred_address", None)
+        else:
+            preferences["preferred_address"] = preferred_address
+        profile.preferences = preferences
+    for field, value in updates.items():
         setattr(profile, field, value)
     profile.updated_at = datetime.now(UTC)
     _audit(db, auth.user.id, "profile.updated")

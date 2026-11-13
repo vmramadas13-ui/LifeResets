@@ -138,10 +138,17 @@ def test_profile_updates_are_owned_and_require_csrf(
     client.headers.update({"X-CSRF-Token": client.cookies.get("lr-csrf")})
     response = client.patch(
         "/api/v1/profile",
-        json={"display_name": "Test Hunter", "timezone": "Asia/Kolkata"},
+        json={
+            "display_name": "Test Hunter",
+            "timezone": "Asia/Kolkata",
+            "preferred_address": "  VEE  ",
+        },
     )
     assert response.status_code == 200
     assert response.json()["display_name"] == "Test Hunter"
+    assert response.json()["preferred_address"] == "VEE"
+    assert response.json()["timezone"] == "Asia/Kolkata"
+    assert client.get("/api/v1/profile").json()["preferred_address"] == "VEE"
 
     null_timezone = client.patch("/api/v1/profile", json={"timezone": None})
     assert null_timezone.status_code == 422
@@ -154,6 +161,7 @@ def test_profile_updates_are_owned_and_require_csrf(
     db_session.expire_all()
     profile = db_session.get(Profile, test_user["id"])
     assert profile is not None and profile.display_name == "Test Hunter"
+    assert profile.preferences["preferred_address"] == "VEE"
 
 
 def test_consent_records_are_append_only_and_account_scoped(

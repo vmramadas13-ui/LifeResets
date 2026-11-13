@@ -7,6 +7,7 @@ let workspaceQuests = [];
 let dailyPlan = null;
 let workspaceProgress = null;
 let coreReply = "";
+let corePreferredAddress = "VEE";
 let activeAgentActionId = null;
 let awakeningData = null;
 let awakeningStepIndex = 0;
@@ -834,14 +835,19 @@ async function loadWorkspace() {
   $("#logout").hidden = false;
   if (!$("#daily-plan-date").value) $("#daily-plan-date").value = localDateString();
   const planDate = $("#daily-plan-date").value;
-  const [domains, goals, habits, preview, rpg, insights, inbox, awakening, campaigns, reviews, consents, tasks, quests, currentPlan, recovery, dailyReflection, skills, chronicle, agentActions] = await Promise.all([
+  const [domains, goals, habits, preview, rpg, insights, inbox, awakening, campaigns, reviews, consents, tasks, quests, currentPlan, recovery, dailyReflection, skills, chronicle, agentActions, profile] = await Promise.all([
     api("/api/v1/domains"), api("/api/v1/goals"), api("/api/v1/habits"), api("/api/v1/plans/preview"), api("/api/v1/rpg/status"), api("/api/v1/insights/progress"), api("/api/v1/notifications/inbox"),
     api("/api/v1/onboarding/awakening"), api("/api/v1/campaigns"), api("/api/v1/reviews"), api("/api/v1/consents"), api("/api/v1/tasks"),
     api("/api/v1/quests"),
     api(`/api/v1/daily-plans/${planDate}`), api(`/api/v1/daily-plans/${planDate}/recovery`),
     api(`/api/v1/daily-plans/${planDate}/reflection`),
-    api("/api/v1/rpg/skills"), api("/api/v1/rpg/chronicle"), api("/api/v1/agent/actions"),
+    api("/api/v1/rpg/skills"), api("/api/v1/rpg/chronicle"), api("/api/v1/agent/actions"), api("/api/v1/profile"),
   ]);
+  corePreferredAddress = profile.preferred_address || "VEE";
+  const profileForm = $("#profile-form");
+  profileForm.elements.display_name.value = profile.display_name || "";
+  profileForm.elements.preferred_address.value = corePreferredAddress;
+  profileForm.elements.timezone.value = profile.timezone || "UTC";
   const latestReflectionConsent = consents
     .filter((record) => record.purpose === "reflection_storage")
     .reverse()[0];
@@ -2759,6 +2765,30 @@ $("#language-toggle").addEventListener("change", (event) => {
   renderProgress(workspaceProgress);
 });
 
+$("#profile-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const payload = formObject(form);
+  payload.display_name = payload.display_name.trim() || null;
+  payload.preferred_address = payload.preferred_address.trim() || null;
+  payload.timezone = payload.timezone.trim();
+  const submit = form.querySelector("button[type='submit']");
+  submit.disabled = true;
+  $("#profile-status").textContent = "Saving your private profile…";
+  try {
+    const profile = await api("/api/v1/profile", { method: "PATCH", body: JSON.stringify(payload) });
+    corePreferredAddress = profile.preferred_address || "VEE";
+    form.elements.display_name.value = profile.display_name || "";
+    form.elements.preferred_address.value = corePreferredAddress;
+    form.elements.timezone.value = profile.timezone || "UTC";
+    $("#profile-status").textContent = "Profile saved. Your Hunter name and callsign remain separate.";
+  } catch (error) {
+    $("#profile-status").textContent = `Profile could not be saved: ${error.message}`;
+  } finally {
+    submit.disabled = false;
+  }
+});
+
 $("#download-account-export").addEventListener("click", async () => {
   const status = $("#account-export-state");
   status.textContent = "Preparing your account export…";
@@ -2821,7 +2851,7 @@ $("#core-form").addEventListener("submit", async (event) => {
   try {
     const result = await api("/api/v1/core/respond", { method: "POST", body: JSON.stringify(formObject(event.currentTarget)) });
     coreReply = result.answer;
-    $("#core-answer").textContent = `${result.answer} Sources: ${result.provenance.join(", ") || "no saved records"}.`;
+    $("#core-answer").textContent = `${corePreferredAddress}: ${result.answer} Sources: ${result.provenance.join(", ") || "no saved records"}.`;
     $("#speak-answer").disabled = !("speechSynthesis" in window);
   }
   catch (error) { showNotice(error.message); }

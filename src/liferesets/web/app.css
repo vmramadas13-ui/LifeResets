@@ -351,6 +351,9 @@ details form { margin-top: 15px; }
 .setting-row span { display: grid; gap: 4px; }
 .setting-row small { color: var(--muted); font-size: .78rem; font-weight: 550; line-height: 1.35; }
 .setting-row input { width: 24px; height: 24px; min-width: 24px; }
+.profile-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; max-width: none; margin: 16px 0 10px; }
+.profile-form > button, .profile-form > p { grid-column: 1 / -1; }
+.profile-form .field-hint { margin: -7px 0 0; }
 .account-data-section > button { min-height: 48px; margin-top: 8px; }
 .account-deletion-preview { margin-top: 20px; padding: 15px; border: 2px solid var(--line); border-radius: 16px; background: var(--paper); }
 .account-deletion-preview > summary { min-height: 34px; font-weight: 850; cursor: pointer; }
@@ -411,6 +414,8 @@ section[id] { scroll-margin-top: 18px; }
   .habit-check-in-form label:nth-child(2), .habit-check-in-actions { grid-column: 1 / -1; }
   .habit-weekdays { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .settings-grid { grid-template-columns: 1fr; }
+  .profile-form { grid-template-columns: 1fr; }
+  .profile-form > button, .profile-form > p { grid-column: auto; }
   .account-delete-form { grid-template-columns: 1fr; }
   .account-delete-ack, .account-delete-submit, #account-delete-state { grid-column: auto; }
   .mobile-nav { position: fixed; z-index: 20; right: 0; bottom: 0; left: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 3px; padding: 7px max(8px, env(safe-area-inset-right)) calc(7px + env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); border-top: 2px solid var(--ink); background: var(--surface); box-shadow: 0 -3px 0 color-mix(in srgb, var(--ink) 15%, transparent); }
