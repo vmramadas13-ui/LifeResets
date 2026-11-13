@@ -1141,6 +1141,7 @@ def carry_forward_review_next_step(
                 "id": str(task.id),
                 "title": task.title,
                 "goal_id": str(task.goal_id) if task.goal_id else None,
+                "domain": task.domain,
             },
         }
 
@@ -1161,28 +1162,28 @@ def carry_forward_review_next_step(
                 "message": "Add a next step to the review before carrying it forward.",
             },
         )
-    if (
-        request.goal_id is not None
-        and db.scalar(
-            select(Goal.id).where(
+    goal = None
+    if request.goal_id is not None:
+        goal = db.scalar(
+            select(Goal).where(
                 Goal.id == request.goal_id,
                 Goal.user_id == auth.user.id,
                 Goal.status == "active",
             )
         )
-        is None
-    ):
-        raise HTTPException(
-            status_code=404,
-            detail={
-                "code": "resource_not_found",
-                "message": "The requested resource was not found.",
-            },
-        )
+        if goal is None:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "resource_not_found",
+                    "message": "The requested resource was not found.",
+                },
+            )
 
     task = Task(
         user_id=auth.user.id,
         goal_id=request.goal_id,
+        domain=goal.domain if goal is not None else "discipline",
         title=next_step[:160].strip(),
         description=next_step if len(next_step) > 160 else None,
     )
@@ -1207,6 +1208,7 @@ def carry_forward_review_next_step(
                 "id": str(task.id),
                 "title": task.title,
                 "goal_id": str(task.goal_id) if task.goal_id else None,
+                "domain": task.domain,
             },
         }
     db.refresh(task)
@@ -1216,6 +1218,7 @@ def carry_forward_review_next_step(
             "id": str(task.id),
             "title": task.title,
             "goal_id": str(task.goal_id) if task.goal_id else None,
+            "domain": task.domain,
         },
     }
 

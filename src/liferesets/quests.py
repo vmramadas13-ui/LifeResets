@@ -131,6 +131,7 @@ def _quest_payload(quest: Quest) -> dict[str, object]:
                 "task_id": str(step.task_id),
                 "position": step.position,
                 "title": step.task.title,
+                "domain": step.task.domain,
                 "status": step.task.status,
                 "due_date": step.task.due_date.isoformat()
                 if step.task.due_date
@@ -168,16 +169,14 @@ def create_quest(
     auth: AuthenticatedWithCsrf,
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
-    if (
-        request.goal_id is not None
-        and db.scalar(
-            select(Goal.id).where(
-                Goal.id == request.goal_id, Goal.user_id == auth.user.id
-            )
+    goal = None
+    if request.goal_id is not None:
+        goal = db.scalar(
+            select(Goal).where(Goal.id == request.goal_id, Goal.user_id == auth.user.id)
         )
-        is None
-    ):
-        raise _not_found()
+        if goal is None:
+            raise _not_found()
+    task_domain = goal.domain if goal is not None else "discipline"
 
     quest = Quest(
         user_id=auth.user.id,
@@ -189,6 +188,7 @@ def create_quest(
         task = Task(
             user_id=auth.user.id,
             goal_id=request.goal_id,
+            domain=task_domain,
             title=step_input.title,
             due_date=step_input.due_date,
         )

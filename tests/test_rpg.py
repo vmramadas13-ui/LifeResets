@@ -84,8 +84,11 @@ def test_task_completion_uses_append_only_xp_and_reopens_with_correction(
     client, test_user
 ) -> None:
     _login(client, test_user)
-    created = client.post("/api/v1/tasks", json={"title": "Practice SQL"})
+    created = client.post(
+        "/api/v1/tasks", json={"title": "Practice SQL", "domain": "learning"}
+    )
     assert created.status_code == 201
+    assert created.json()["domain"] == "learning"
     task_id = created.json()["id"]
     path = f"/api/v1/tasks/{task_id}"
 
@@ -95,6 +98,14 @@ def test_task_completion_uses_append_only_xp_and_reopens_with_correction(
     first_events = client.get("/api/v1/rpg/events").json()
     assert len(first_events) == 1
     assert first_events[0]["event_type"] == "task_completed"
+    assert first_events[0]["domain"] == "learning"
+    assert first_events[0]["ruleset_version"] == "starter-1"
+    assert first_events[0]["created_at"].endswith("+00:00")
+    chronicle = client.get("/api/v1/rpg/chronicle").json()
+    assert any(
+        item["category"] == "progression" and "Learning" in item["detail"]
+        for item in chronicle
+    )
 
     assert client.patch(path, json={"status": "pending"}).status_code == 200
     assert client.get("/api/v1/rpg/status").json()["total_xp"] == 0
@@ -102,6 +113,43 @@ def test_task_completion_uses_append_only_xp_and_reopens_with_correction(
     assert client.get("/api/v1/rpg/status").json()["total_xp"] == 10
     events = client.get("/api/v1/rpg/events").json()
     assert [item["xp_delta"] for item in reversed(events)] == [10, -10, 10]
+    assert {item["domain"] for item in events} == {"learning"}
+    exported = client.get("/api/v1/export").json()["character_data"][
+        "progression_events"
+    ]
+    assert {item["domain"] for item in exported} == {"learning"}
+
+
+def test_task_inherits_its_goal_domain_for_xp_events(client, test_user) -> None:
+    _login(client, test_user)
+    goal = client.post(
+        "/api/v1/goals",
+        json={"domain": "fitness", "title": "Build a walking routine"},
+    )
+    assert goal.status_code == 201, goal.text
+    task = client.post(
+        "/api/v1/tasks",
+        json={"title": "Take a short walk", "goal_id": goal.json()["id"]},
+    )
+    assert task.status_code == 201, task.text
+    assert task.json()["domain"] == "fitness"
+
+    completed = client.patch(
+        f"/api/v1/tasks/{task.json()['id']}", json={"status": "completed"}
+    )
+    assert completed.status_code == 200
+    event = client.get("/api/v1/rpg/events").json()[0]
+    assert event["domain"] == "fitness"
+
+    mismatched = client.post(
+        "/api/v1/tasks",
+        json={
+            "title": "Practice an unrelated task",
+            "goal_id": goal.json()["id"],
+            "domain": "learning",
+        },
+    )
+    assert mismatched.status_code == 422
 
 
 def test_pause_suppresses_new_xp_without_changing_task_or_history(
@@ -147,6 +195,7 @@ def test_progression_corrections_are_append_only_and_idempotent(
     assert response.status_code == 201
     assert response.json()["xp_delta"] == -10
     assert response.json()["correction_of_id"] == event["id"]
+    assert response.json()["domain"] == event["domain"]
     assert client.get("/api/v1/rpg/status").json()["total_xp"] == 0
     assert (
         client.post(

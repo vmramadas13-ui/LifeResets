@@ -315,7 +315,7 @@ details form { margin-top: 15px; }
 .plan-actions button { min-height: 54px; min-width: 210px; }
 .plan-save-state { color: var(--ink); font-weight: 750; }
 .add-action { margin-top: 20px; padding-top: 13px; }
-.task-create-form { max-width: none; grid-template-columns: minmax(200px, 1.5fr) minmax(160px, .8fr) minmax(190px, 1fr) auto; align-items: end; }
+.task-create-form { max-width: none; grid-template-columns: minmax(200px, 1.5fr) minmax(145px, .8fr) minmax(180px, 1fr) minmax(160px, .9fr) auto; align-items: end; }
 .task-create-form button { min-height: 48px; }
 .saved-plan { margin-top: 25px; padding-top: 22px; border-top: 2px solid var(--line); }
 .saved-plan > .hint { margin: 5px 0 10px; }

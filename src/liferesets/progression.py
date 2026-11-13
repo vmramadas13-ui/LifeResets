@@ -54,6 +54,7 @@ def record_task_transition(
             ProgressionEvent(
                 user_id=task.user_id,
                 task_id=task.id,
+                domain=task.domain,
                 event_type="task_completed",
                 xp_delta=XP_PER_TASK,
                 ruleset_version=RULESET_VERSION,
@@ -65,6 +66,7 @@ def record_task_transition(
             ProgressionEvent(
                 user_id=task.user_id,
                 task_id=task.id,
+                domain=task.domain,
                 event_type="task_reopened",
                 xp_delta=-min(existing_xp, XP_PER_TASK),
                 ruleset_version=RULESET_VERSION,

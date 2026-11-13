@@ -351,6 +351,11 @@ class Task(Base):
         CheckConstraint(
             "status IN ('pending','completed','skipped')", name="valid_task_status"
         ),
+        CheckConstraint(
+            "domain IN ('career','fitness','finance','discipline','learning',"
+            "'mental_wellness','relationships','lifestyle')",
+            name="valid_task_domain",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -359,6 +364,9 @@ class Task(Base):
     )
     goal_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("goals.id", ondelete="SET NULL"), index=True, nullable=True
+    )
+    domain: Mapped[str] = mapped_column(
+        String(32), default="discipline", server_default="discipline", nullable=False
     )
     title: Mapped[str] = mapped_column(String(160), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -1062,6 +1070,11 @@ class ProgressionEvent(Base):
             name="valid_progression_event_type",
         ),
         CheckConstraint("xp_delta BETWEEN -10000 AND 10000", name="valid_xp_delta"),
+        CheckConstraint(
+            "domain IN ('career','fitness','finance','discipline','learning',"
+            "'mental_wellness','relationships','lifestyle')",
+            name="valid_progression_event_domain",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -1075,6 +1088,9 @@ class ProgressionEvent(Base):
         Uuid,
         ForeignKey("progression_events.id", ondelete="SET NULL"),
         nullable=True,
+    )
+    domain: Mapped[str] = mapped_column(
+        String(32), default="discipline", server_default="discipline", nullable=False
     )
     event_type: Mapped[str] = mapped_column(String(32), nullable=False)
     xp_delta: Mapped[int] = mapped_column(Integer, nullable=False)

@@ -38,7 +38,7 @@ def test_migration_upgrade_and_rollback(tmp_path: Path, monkeypatch) -> None:
             revision = connection.execute(
                 text("SELECT version_num FROM alembic_version")
             ).scalar_one()
-        assert revision == "fe1c02ab2dd3"
+        assert revision == "b6d28a4c9f10"
         assert {
             "users",
             "profiles",
@@ -96,6 +96,13 @@ def test_migration_upgrade_and_rollback(tmp_path: Path, monkeypatch) -> None:
         assert {"day_start_time", "day_end_time"}.issubset(
             {column["name"] for column in inspect(engine).get_columns("daily_plans")}
         )
+        assert "domain" in {
+            column["name"] for column in inspect(engine).get_columns("tasks")
+        }
+        assert "domain" in {
+            column["name"]
+            for column in inspect(engine).get_columns("progression_events")
+        }
 
         command.downgrade(config, "base")
         assert not {
@@ -275,11 +282,146 @@ def test_progression_migration_preserves_xp_for_preexisting_completed_tasks(
                     text("event_type"),
                     text("xp_delta"),
                     text("task_id"),
+                    text("domain"),
                 ).select_from(text("progression_events"))
             ).one()
         assert row.event_type == "task_completed"
         assert row.xp_delta == 10
+        assert row.domain == "discipline"
         assert str(task_id).replace("-", "") in str(row.task_id).replace("-", "")
+    finally:
+        engine.dispose()
+        get_settings.cache_clear()
+
+
+def test_progression_domain_migration_backfills_from_goals(
+    tmp_path: Path, monkeypatch
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'progression-domain-backfill.db'}"
+    monkeypatch.setenv("LIFERESETS_DATABASE_URL", database_url)
+    get_settings.cache_clear()
+    config = Config(str(ROOT / "alembic.ini"))
+    engine = create_engine(database_url)
+    user_id = uuid.uuid4()
+    goal_id = uuid.uuid4()
+    linked_task_id = uuid.uuid4()
+    standalone_task_id = uuid.uuid4()
+    linked_event_id = uuid.uuid4()
+    standalone_event_id = uuid.uuid4()
+    created_at = datetime.now(UTC)
+    metadata = MetaData()
+
+    try:
+        command.upgrade(config, "fe1c02ab2dd3")
+        users = Table("users", metadata, autoload_with=engine)
+        goals = Table("goals", metadata, autoload_with=engine)
+        tasks = Table("tasks", metadata, autoload_with=engine)
+        events = Table("progression_events", metadata, autoload_with=engine)
+        with engine.begin() as connection:
+            connection.execute(
+                insert(users).values(
+                    id=user_id.hex,
+                    email="progression-domain@example.com",
+                    password_hash="unused",
+                    is_active=True,
+                    created_at=created_at,
+                )
+            )
+            connection.execute(
+                insert(goals).values(
+                    id=goal_id.hex,
+                    user_id=user_id.hex,
+                    domain="fitness",
+                    title="Build a walking routine",
+                    description=None,
+                    priority=3,
+                    status="active",
+                    target_date=None,
+                    created_at=created_at,
+                    updated_at=created_at,
+                )
+            )
+            connection.execute(
+                insert(tasks),
+                [
+                    {
+                        "id": linked_task_id.hex,
+                        "user_id": user_id.hex,
+                        "goal_id": goal_id.hex,
+                        "title": "Take a walk",
+                        "description": None,
+                        "due_date": None,
+                        "status": "completed",
+                        "completed_at": created_at,
+                        "created_at": created_at,
+                    },
+                    {
+                        "id": standalone_task_id.hex,
+                        "user_id": user_id.hex,
+                        "goal_id": None,
+                        "title": "Reset the workspace",
+                        "description": None,
+                        "due_date": None,
+                        "status": "completed",
+                        "completed_at": created_at,
+                        "created_at": created_at,
+                    },
+                ],
+            )
+            connection.execute(
+                insert(events),
+                [
+                    {
+                        "id": linked_event_id.hex,
+                        "user_id": user_id.hex,
+                        "task_id": linked_task_id.hex,
+                        "correction_of_id": None,
+                        "event_type": "task_completed",
+                        "xp_delta": 10,
+                        "ruleset_version": "starter-1",
+                        "reason": "Task marked complete.",
+                        "created_at": created_at,
+                    },
+                    {
+                        "id": standalone_event_id.hex,
+                        "user_id": user_id.hex,
+                        "task_id": standalone_task_id.hex,
+                        "correction_of_id": None,
+                        "event_type": "task_completed",
+                        "xp_delta": 10,
+                        "ruleset_version": "starter-1",
+                        "reason": "Task marked complete.",
+                        "created_at": created_at,
+                    },
+                ],
+            )
+
+        command.upgrade(config, "head")
+        tasks_after = Table("tasks", MetaData(), autoload_with=engine)
+        events_after = Table("progression_events", MetaData(), autoload_with=engine)
+        with engine.connect() as connection:
+            task_domains = dict(
+                connection.execute(
+                    select(tasks_after.c.id, tasks_after.c.domain).where(
+                        tasks_after.c.id.in_(
+                            [linked_task_id.hex, standalone_task_id.hex]
+                        )
+                    )
+                ).all()
+            )
+            event_domains = dict(
+                connection.execute(
+                    select(events_after.c.id, events_after.c.domain).where(
+                        events_after.c.id.in_(
+                            [linked_event_id.hex, standalone_event_id.hex]
+                        )
+                    )
+                ).all()
+            )
+        assert task_domains[linked_task_id.hex] == "fitness"
+        assert task_domains[standalone_task_id.hex] == "discipline"
+        assert event_domains[linked_event_id.hex] == "fitness"
+        assert event_domains[standalone_event_id.hex] == "discipline"
     finally:
         engine.dispose()
         get_settings.cache_clear()

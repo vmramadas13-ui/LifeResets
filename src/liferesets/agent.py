@@ -210,7 +210,12 @@ def approve_action(
         )
 
     title = str(action.proposal["title"])
-    task = Task(user_id=auth.user.id, goal_id=goal.id, title=title)
+    task = Task(
+        user_id=auth.user.id,
+        goal_id=goal.id,
+        domain=goal.domain,
+        title=title,
+    )
     db.add(task)
     db.flush()
     action.result_task_id = task.id
@@ -225,6 +230,7 @@ def _task_payload(task: Task) -> dict[str, object]:
         "id": str(task.id),
         "title": task.title,
         "goal_id": str(task.goal_id) if task.goal_id else None,
+        "domain": task.domain,
         "status": task.status,
     }
 

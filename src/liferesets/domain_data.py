@@ -251,6 +251,7 @@ class TaskCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     goal_id: UUID | None = None
+    domain: DomainCode | None = None
     title: str = Field(min_length=1, max_length=160)
     description: str | None = Field(default=None, max_length=3000)
     due_date: date | None = None
@@ -549,6 +550,7 @@ def _task_payload(task: Task) -> dict[str, object]:
     return {
         "id": str(task.id),
         "goal_id": str(task.goal_id) if task.goal_id else None,
+        "domain": task.domain,
         "title": task.title,
         "description": task.description,
         "due_date": task.due_date.isoformat() if task.due_date else None,
@@ -1101,19 +1103,21 @@ def create_task(
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
     """Create an owned task, optionally attached to an owned goal."""
-    if (
-        request.goal_id is not None
-        and db.scalar(
-            select(Goal.id).where(
-                Goal.id == request.goal_id, Goal.user_id == auth.user.id
-            )
+    goal = None
+    if request.goal_id is not None:
+        goal = db.scalar(
+            select(Goal).where(Goal.id == request.goal_id, Goal.user_id == auth.user.id)
         )
-        is None
-    ):
-        raise _not_found()
+        if goal is None:
+            raise _not_found()
+        if request.domain is not None and request.domain != goal.domain:
+            raise HTTPException(
+                status_code=422, detail="An action must use its linked goal's domain."
+            )
     task = Task(
         user_id=auth.user.id,
         goal_id=request.goal_id,
+        domain=goal.domain if goal is not None else request.domain or "discipline",
         title=request.title,
         description=request.description,
         due_date=request.due_date,

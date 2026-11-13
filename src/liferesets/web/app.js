@@ -158,6 +158,21 @@ function previousDateString(value) {
   return localDateString(date);
 }
 
+function syncTaskDomainChoice() {
+  const selector = $("#task-domain");
+  const goal = workspaceGoals.find((item) => item.id === $("#task-goal").value);
+  if (!goal) {
+    selector.disabled = false;
+    return;
+  }
+  if (![...selector.options].some((option) => option.value === goal.domain)) {
+    const domain = workspaceDomains.find((item) => item.code === goal.domain);
+    selector.add(new Option(domain?.name || goal.domain.replaceAll("_", " "), goal.domain));
+  }
+  selector.value = goal.domain;
+  selector.disabled = true;
+}
+
 function csrfToken() {
   return document.cookie.split("; ").find((item) => item.startsWith("lr-csrf="))?.split("=").slice(1).join("=") || "";
 }
@@ -845,6 +860,12 @@ async function loadWorkspace() {
   const activeGoals = goals.filter((goal) => goal.status === "active");
   $("#agent-goal").replaceChildren(...activeGoals.map((goal) => new Option(goal.title, goal.id)));
   $("#task-goal").replaceChildren(new Option("No goal selected", ""), ...activeGoals.map((goal) => new Option(goal.title, goal.id)));
+  const taskDomainSelect = $("#task-domain");
+  taskDomainSelect.disabled = false;
+  const availableTaskDomains = activeDomains.length ? activeDomains : domains;
+  taskDomainSelect.replaceChildren(...availableTaskDomains.map((domain) => new Option(domain.name, domain.code)));
+  taskDomainSelect.value = availableTaskDomains.find((domain) => domain.code === "discipline")?.code || availableTaskDomains[0]?.code || "discipline";
+  syncTaskDomainChoice();
   $("#habit-goal").replaceChildren(new Option("No goal linked", ""), ...activeGoals.map((goal) => new Option(goal.title, goal.id)));
   $("#quest-goal").replaceChildren(new Option("No goal linked", ""), ...activeGoals.map((goal) => new Option(goal.title, goal.id)));
   $("#agent-form button").disabled = activeGoals.length === 0;
@@ -920,6 +941,8 @@ function renderTaskPicker(plan = dailyPlan) {
     const questStep = workspaceQuests.flatMap((quest) => quest.steps.map((step) => ({ quest, step })))
       .find(({ step }) => step.task_id === task.id);
     const metadata = [];
+    const domainName = workspaceDomains.find((domain) => domain.code === task.domain)?.name || task.domain?.replaceAll("_", " ");
+    if (domainName) metadata.push(domainName);
     if (task.due_date) metadata.push(`Due ${task.due_date}`);
     else metadata.push(task.status === "completed" ? "Completed" : "Open action");
     if (questStep) {
@@ -2502,6 +2525,8 @@ $("#task-form").addEventListener("submit", async (event) => {
     showNotice("Action added. Choose it when you’re ready to plan.");
   } catch (error) { showNotice(error.message); }
 });
+
+$("#task-goal").addEventListener("change", syncTaskDomainChoice);
 
 $("#character-form").addEventListener("submit", async (event) => {
   event.preventDefault();

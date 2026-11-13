@@ -31,6 +31,7 @@ def test_web_shell_and_pwa_files_are_served() -> None:
         assert 'id="daily-reflection-save"' in page.text
         assert 'id="daily-reflection-delete"' in page.text
         assert 'name="tomorrow_support"' in page.text
+        assert 'id="task-domain"' in page.text
         assert 'id="theme-toggle"' in page.text
         assert 'id="motion-toggle"' in page.text
         assert 'id="language-toggle"' in page.text
@@ -82,6 +83,8 @@ def test_web_shell_and_pwa_files_are_served() -> None:
         assert "function renderDailyReflection(reflection)" in app_script.text
         assert "daily-reflection-delete" in app_script.text
         assert "/reflection`" in app_script.text
+        assert "function syncTaskDomainChoice()" in app_script.text
+        assert "taskDomainSelect.disabled = false" in app_script.text
         assert "Save and continue" in app_script.text
         assert "function setReviewStep(index)" in app_script.text
         assert 'fieldset.className = "guided-review-step"' in app_script.text
@@ -121,7 +124,7 @@ def test_web_shell_and_pwa_files_are_served() -> None:
         assert client.get("/static/app-icon-512.png").status_code == 200
         worker = client.get("/sw.js")
         assert worker.status_code == 200
-        assert 'const CACHE = "liferesets-shell-v8"' in worker.text
+        assert 'const CACHE = "liferesets-shell-v9"' in worker.text
         assert worker.headers["service-worker-allowed"] == "/"
         assert 'url.pathname.startsWith("/api/")' in worker.text
         assert client.get("/static/app.js").status_code == 200

@@ -124,6 +124,7 @@ def _event_payload(event: ProgressionEvent) -> dict[str, object]:
         ),
         "event_type": event.event_type,
         "xp_delta": event.xp_delta,
+        "domain": event.domain,
         "ruleset_version": event.ruleset_version,
         "reason": event.reason,
         "created_at": created_at.isoformat(),
@@ -297,6 +298,7 @@ def correct_progression_event(
         user_id=auth.user.id,
         task_id=original.task_id,
         correction_of_id=original.id,
+        domain=original.domain,
         event_type="correction",
         xp_delta=-original.xp_delta,
         ruleset_version=original.ruleset_version,
@@ -457,7 +459,10 @@ def list_chronicle(
             "id": str(event.id),
             "category": "progression",
             "title": event.reason,
-            "detail": f"{event.xp_delta:+d} XP · {event.ruleset_version}",
+            "detail": (
+                f"{event.xp_delta:+d} XP · {event.domain.replace('_', ' ').title()} · "
+                f"{event.ruleset_version}"
+            ),
             "created_at": event.created_at.isoformat(),
         }
         for event in events
