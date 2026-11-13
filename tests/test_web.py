@@ -98,6 +98,9 @@ def test_web_shell_and_pwa_files_are_served() -> None:
         assert "Manually saved encrypted backups remain" in app_script.text
         assert 'api("/api/v1/profile", { method: "PATCH"' in app_script.text
         assert "`${corePreferredAddress}: ${result.answer}" in app_script.text
+        assert "function saveAwakeningDraft()" in app_script.text
+        assert "Saving automatically when you pause" in app_script.text
+        assert "function renderAwakeningHistory(step)" in app_script.text
         assert "taskDomainSelect.disabled = false" in app_script.text
         assert "Save and continue" in app_script.text
         assert "function setReviewStep(index)" in app_script.text
@@ -114,6 +117,8 @@ def test_web_shell_and_pwa_files_are_served() -> None:
         assert "review answers and optional daily reflections" in page.text
         assert 'id="awakening-form"' in page.text
         assert 'id="awakening-consent"' in page.text
+        assert 'id="awakening-save-state"' in page.text
+        assert 'id="awakening-answer-history"' in page.text
         assert 'id="awakening-save-later"' in page.text
         assert 'id="awakening-assessment-panel"' in page.text
         assert 'id="awakening-baseline-panel"' in page.text

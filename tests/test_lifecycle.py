@@ -81,7 +81,7 @@ def test_awakening_guides_seven_prompts_and_requires_consent_for_answers(
     # Progress markers remain available without storing an answer.
     assert (
         client.patch(
-            "/api/v1/onboarding/awakening/6", json={"status": "completed"}
+            "/api/v1/onboarding/awakening/6", json={"status": "skipped"}
         ).status_code
         == 200
     )
@@ -96,19 +96,33 @@ def test_awakening_guides_seven_prompts_and_requires_consent_for_answers(
         json={"status": "in_progress", "answer": "A saved draft"},
     )
     assert draft.status_code == 200
+    assert client.post("/api/v1/auth/logout").status_code == 204
+    _login(client, test_user)
     resumed = client.get("/api/v1/onboarding/awakening").json()
-    assert resumed["completed"] == 2
-    assert resumed["steps"][5]["status"] == "completed"
+    assert resumed["completed"] == 1
+    assert resumed["steps"][5]["status"] == "skipped"
+    assert not any(item["domain"] == "finance" for item in resumed["baselines"])
+    assert client.get("/api/v1/plans/preview").status_code == 200
     assert resumed["steps"][0]["answer"] == "A test reflection"
     assert resumed["steps"][2]["status"] == "in_progress"
     assert resumed["steps"][2]["answer"] == "A saved draft"
     assert resumed["storage_consent"] is True
+    changed = client.patch(
+        "/api/v1/onboarding/awakening/1",
+        json={"status": "completed", "answer": "An updated reflection"},
+    )
+    assert changed.status_code == 200
+    assert changed.json()["answer"] == "An updated reflection"
+    assert changed.json()["answer_history"][0]["answer"] == "A test reflection"
+    assert changed.json()["answer_history"][0]["recorded_at"]
     exported = client.get("/api/v1/export").json()["lifecycle_data"]["onboarding_steps"]
     assert {item["answer"] for item in exported} == {
         None,
-        "A test reflection",
+        "An updated reflection",
         "A saved draft",
     }
+    step_export = next(item for item in exported if item["step"] == 1)
+    assert step_export["answer_history"][0]["answer"] == "A test reflection"
 
 
 def test_awakening_withdrawal_blocks_answer_updates_and_delete_clears_answers(
@@ -123,6 +137,11 @@ def test_awakening_withdrawal_blocks_answer_updates_and_delete_clears_answers(
         ).status_code
         == 200
     )
+    changed = client.patch(
+        "/api/v1/onboarding/awakening/2",
+        json={"status": "completed", "answer": "A revised private note"},
+    )
+    assert changed.json()["answer_history"][0]["answer"] == "A private test note"
     _record_awakening_consent(client, granted=False)
     blocked = client.patch(
         "/api/v1/onboarding/awakening/2",
@@ -131,13 +150,21 @@ def test_awakening_withdrawal_blocks_answer_updates_and_delete_clears_answers(
     assert blocked.status_code == 403
     assert (
         client.get("/api/v1/onboarding/awakening").json()["steps"][1]["answer"]
-        == "A private test note"
+        == "A revised private note"
     )
     deleted = client.delete("/api/v1/onboarding/awakening/answers")
     assert deleted.status_code == 200
-    assert deleted.json() == {"deleted_answers": 1, "deleted_assessments": 0}
+    assert deleted.json() == {
+        "deleted_answers": 1,
+        "deleted_revisions": 1,
+        "deleted_assessments": 0,
+    }
     assert (
         client.get("/api/v1/onboarding/awakening").json()["steps"][1]["answer"] is None
+    )
+    assert (
+        client.get("/api/v1/onboarding/awakening").json()["steps"][1]["answer_history"]
+        == []
     )
 
 
@@ -185,7 +212,11 @@ def test_awakening_life_area_assessments_are_consent_gated_editable_and_exportab
     )
 
     deleted = client.delete("/api/v1/onboarding/awakening/answers")
-    assert deleted.json() == {"deleted_answers": 0, "deleted_assessments": 1}
+    assert deleted.json() == {
+        "deleted_answers": 0,
+        "deleted_revisions": 0,
+        "deleted_assessments": 1,
+    }
     assert client.get("/api/v1/onboarding/awakening").json()["assessments"] == []
     assert (
         client.get("/api/v1/export").json()["lifecycle_data"]["awakening_assessments"]

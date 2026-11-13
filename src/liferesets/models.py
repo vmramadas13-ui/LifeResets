@@ -608,6 +608,29 @@ class OnboardingStep(Base):
     )
 
     user: Mapped[User] = relationship(back_populates="onboarding_steps")
+    answer_revisions: Mapped[list[AwakeningAnswerRevision]] = relationship(
+        back_populates="step",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="AwakeningAnswerRevision.recorded_at, AwakeningAnswerRevision.id",
+    )
+
+
+class AwakeningAnswerRevision(Base):
+    """A prior consent-gated answer kept for user-visible editing history."""
+
+    __tablename__ = "awakening_answer_revisions"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    step_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("onboarding_steps.id", ondelete="CASCADE"), index=True
+    )
+    answer: Mapped[str] = mapped_column(Text, nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+    step: Mapped[OnboardingStep] = relationship(back_populates="answer_revisions")
 
 
 class AwakeningAssessment(Base):

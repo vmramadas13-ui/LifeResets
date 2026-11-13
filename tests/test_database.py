@@ -38,7 +38,7 @@ def test_migration_upgrade_and_rollback(tmp_path: Path, monkeypatch) -> None:
             revision = connection.execute(
                 text("SELECT version_num FROM alembic_version")
             ).scalar_one()
-        assert revision == "b6d28a4c9f10"
+        assert revision == "e2d94a6c1f30"
         assert {
             "users",
             "profiles",
@@ -76,10 +76,17 @@ def test_migration_upgrade_and_rollback(tmp_path: Path, monkeypatch) -> None:
             "campaign_scope_changes",
             "campaign_retrospectives",
             "daily_reflections",
+            "awakening_answer_revisions",
         }.issubset(inspect(engine).get_table_names())
         assert "answer" in {
             column["name"] for column in inspect(engine).get_columns("onboarding_steps")
         }
+        assert {"step_id", "answer", "recorded_at"}.issubset(
+            {
+                column["name"]
+                for column in inspect(engine).get_columns("awakening_answer_revisions")
+            }
+        )
         assert "confidence" in {
             column["name"] for column in inspect(engine).get_columns("goal_metrics")
         }
@@ -142,6 +149,7 @@ def test_migration_upgrade_and_rollback(tmp_path: Path, monkeypatch) -> None:
             "campaign_scope_changes",
             "campaign_retrospectives",
             "daily_reflections",
+            "awakening_answer_revisions",
         }.intersection(inspect(engine).get_table_names())
         with engine.connect() as connection:
             revision = connection.execute(

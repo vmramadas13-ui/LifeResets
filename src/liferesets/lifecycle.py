@@ -17,6 +17,7 @@ from liferesets.database import get_db
 from liferesets.domain_data import DomainCode
 from liferesets.models import (
     AuditEvent,
+    AwakeningAnswerRevision,
     AwakeningAssessment,
     AwakeningBaseline,
     AwakeningBaselineGoalLink,
@@ -480,7 +481,9 @@ def get_awakening(
     stored = {
         item.step_number: item
         for item in db.scalars(
-            select(OnboardingStep).where(OnboardingStep.user_id == auth.user.id)
+            select(OnboardingStep)
+            .where(OnboardingStep.user_id == auth.user.id)
+            .options(selectinload(OnboardingStep.answer_revisions))
         ).all()
     }
     baselines = db.scalars(
@@ -507,6 +510,20 @@ def get_awakening(
             "prompt": prompt["prompt"],
             "status": stored[number].status if number in stored else "not_started",
             "answer": stored[number].answer if number in stored else None,
+            "updated_at": (
+                stored[number].updated_at.isoformat() if number in stored else None
+            ),
+            "answer_history": (
+                [
+                    {
+                        "answer": revision.answer,
+                        "recorded_at": revision.recorded_at.isoformat(),
+                    }
+                    for revision in stored[number].answer_revisions
+                ]
+                if number in stored
+                else []
+            ),
         }
         for number, prompt in enumerate(AWAKENING_PROMPTS, start=1)
     ]
@@ -802,10 +819,35 @@ def update_awakening_step(
     else:
         step.status = changes.status
     if answer_was_sent:
+        next_answer = answer or None
+        if step.answer and step.answer != next_answer:
+            if _consent_active(db, auth.user.id, "awakening_storage"):
+                db.add(
+                    AwakeningAnswerRevision(
+                        step=step,
+                        answer=step.answer,
+                        recorded_at=step.updated_at,
+                    )
+                )
+            elif next_answer is None:
+                step.answer_revisions.clear()
         step.answer = answer or None
+        step.updated_at = datetime.now(UTC)
     _audit(db, auth.user, "onboarding.step_updated")
     db.commit()
-    return {"step": step_number, "status": step.status}
+    return {
+        "step": step_number,
+        "status": step.status,
+        "answer": step.answer,
+        "updated_at": step.updated_at.isoformat(),
+        "answer_history": [
+            {
+                "answer": revision.answer,
+                "recorded_at": revision.recorded_at.isoformat(),
+            }
+            for revision in step.answer_revisions
+        ],
+    }
 
 
 @router.delete("/onboarding/awakening/answers")
@@ -817,10 +859,13 @@ def delete_awakening_answers(
         select(OnboardingStep).where(OnboardingStep.user_id == auth.user.id)
     ).all()
     deleted = 0
+    deleted_revisions = 0
     for step in steps:
         if step.answer is not None:
             deleted += 1
             step.answer = None
+        deleted_revisions += len(step.answer_revisions)
+        step.answer_revisions.clear()
     assessments = db.scalars(
         select(AwakeningAssessment).where(AwakeningAssessment.user_id == auth.user.id)
     ).all()
@@ -828,7 +873,11 @@ def delete_awakening_answers(
         db.delete(assessment)
     _audit(db, auth.user, "onboarding.answers_deleted")
     db.commit()
-    return {"deleted_answers": deleted, "deleted_assessments": len(assessments)}
+    return {
+        "deleted_answers": deleted,
+        "deleted_revisions": deleted_revisions,
+        "deleted_assessments": len(assessments),
+    }
 
 
 @router.get("/campaigns")
@@ -1248,7 +1297,9 @@ def export_lifecycle_data(
     """Export account-owned onboarding answers, campaigns, and reviews."""
     campaigns = db.scalars(_campaign_query().where(Campaign.user_id == user_id)).all()
     steps = db.scalars(
-        select(OnboardingStep).where(OnboardingStep.user_id == user_id)
+        select(OnboardingStep)
+        .where(OnboardingStep.user_id == user_id)
+        .options(selectinload(OnboardingStep.answer_revisions))
     ).all()
     assessments = db.scalars(
         select(AwakeningAssessment)
@@ -1278,6 +1329,13 @@ def export_lifecycle_data(
                 "status": item.status,
                 "answer": item.answer,
                 "updated_at": item.updated_at.isoformat(),
+                "answer_history": [
+                    {
+                        "answer": revision.answer,
+                        "recorded_at": revision.recorded_at.isoformat(),
+                    }
+                    for revision in item.answer_revisions
+                ],
             }
             for item in steps
         ],

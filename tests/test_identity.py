@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from liferesets.models import (
     AuditEvent,
     AuthSession,
+    AwakeningAnswerRevision,
     Campaign,
     ConsentRecord,
     OnboardingStep,
@@ -247,6 +248,25 @@ def test_account_deletion_requires_password_and_confirmation(
     )
     assert (
         client.post(
+            "/api/v1/consents",
+            json={
+                "purpose": "awakening_storage",
+                "granted": True,
+                "policy_version": "v1",
+            },
+        ).status_code
+        == 201
+    )
+    for answer in ("First private answer", "Revised private answer"):
+        assert (
+            client.patch(
+                "/api/v1/onboarding/awakening/1",
+                json={"status": "completed", "answer": answer},
+            ).status_code
+            == 200
+        )
+    assert (
+        client.post(
             "/api/v1/campaigns",
             json={
                 "title": "Test campaign",
@@ -317,6 +337,10 @@ def test_account_deletion_requires_password_and_confirmation(
     assert db_session.scalar(select(func.count()).select_from(Campaign)) == 0
     assert db_session.scalar(select(func.count()).select_from(OnboardingStep)) == 0
     assert db_session.scalar(select(func.count()).select_from(Review)) == 0
+    assert (
+        db_session.scalar(select(func.count()).select_from(AwakeningAnswerRevision))
+        == 0
+    )
     deletion_event = db_session.scalar(
         select(AuditEvent).where(AuditEvent.action == "account.deleted")
     )

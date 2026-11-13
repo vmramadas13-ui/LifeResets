@@ -11,6 +11,8 @@ let corePreferredAddress = "VEE";
 let activeAgentActionId = null;
 let awakeningData = null;
 let awakeningStepIndex = 0;
+let awakeningAutosaveTimer = null;
+let awakeningAutosaveQueue = Promise.resolve();
 let reflectionStorageConsent = false;
 let importedCalendarPreview = null;
 
@@ -1216,6 +1218,25 @@ function renderDailyReflection(reflection) {
   }
 }
 
+function renderAwakeningHistory(step) {
+  const history = step.answer_history || [];
+  const rows = history.map((revision) => {
+    const item = document.createElement("li");
+    const date = new Date(revision.recorded_at);
+    const when = Number.isNaN(date.getTime())
+      ? "Earlier saved answer"
+      : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
+    const label = document.createElement("strong");
+    label.textContent = when;
+    const answer = document.createElement("p");
+    answer.textContent = revision.answer;
+    item.append(label, answer);
+    return item;
+  });
+  $("#awakening-answer-history-list").replaceChildren(...rows);
+  $("#awakening-answer-history").hidden = rows.length === 0;
+}
+
 function renderAwakening(awakening, selectedIndex = null) {
   awakeningData = awakening;
   const unfinished = awakening.steps.findIndex((step) => !["completed", "skipped"].includes(step.status));
@@ -1230,6 +1251,10 @@ function renderAwakening(awakening, selectedIndex = null) {
   $("#awakening-question-title").textContent = step.title;
   $("#awakening-prompt").textContent = step.prompt;
   $("#awakening-answer").value = step.answer || "";
+  $("#awakening-save-state").textContent = step.updated_at
+    ? `Last saved ${new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(step.updated_at))}. Reflection text is saved only when storage consent is on.`
+    : "Your progress saves automatically when you pause. Reflection text is saved only when storage consent is on.";
+  renderAwakeningHistory(step);
   $("#awakening-consent").checked = awakening.storage_consent;
   $("#awakening-previous").disabled = awakeningStepIndex === 0;
   $("#awakening-save").textContent = awakeningStepIndex === awakening.steps.length - 1 ? "Complete prompt" : "Complete and continue";
@@ -1237,6 +1262,48 @@ function renderAwakening(awakening, selectedIndex = null) {
   $("#awakening-complete").hidden = resolved !== awakening.steps.length;
   renderAwakeningAssessments(awakening, step);
   renderAwakeningBaselines(awakening, step);
+}
+
+function saveAwakeningDraft() {
+  clearTimeout(awakeningAutosaveTimer);
+  if (!awakeningData) return Promise.resolve();
+  const step = awakeningData.steps[awakeningStepIndex];
+  const answer = $("#awakening-answer").value.trim();
+  const payload = {
+    status: ["completed", "skipped"].includes(step.status) ? step.status : "in_progress",
+  };
+  if (awakeningData.storage_consent) payload.answer = answer || null;
+  const status = $("#awakening-save-state");
+  status.textContent = awakeningData.storage_consent && answer
+    ? "Saving your answer…"
+    : "Saving your progress…";
+  const save = async () => {
+    try {
+      const result = await api(`/api/v1/onboarding/awakening/${step.step}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+      step.status = result.status;
+      step.answer = result.answer;
+      step.updated_at = result.updated_at;
+      step.answer_history = result.answer_history;
+      awakeningData.completed = awakeningData.steps.filter(
+        (item) => item.status === "completed",
+      ).length;
+      if (awakeningData.steps[awakeningStepIndex] === step) {
+        status.textContent = awakeningData.storage_consent || !answer
+          ? `Saved ${new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(result.updated_at))}.`
+          : "Progress saved. Turn on reflection storage to save this answer.";
+        renderAwakeningHistory(step);
+      }
+    } catch (error) {
+      if (awakeningData?.steps[awakeningStepIndex] === step) {
+        status.textContent = `Progress could not be saved: ${error.message}`;
+      }
+    }
+  };
+  awakeningAutosaveQueue = awakeningAutosaveQueue.then(save, save);
+  return awakeningAutosaveQueue;
 }
 
 const awakeningAssessmentGuidance = {
@@ -2299,8 +2366,18 @@ $("#habit-form").addEventListener("submit", async (event) => {
   }
 });
 
-$("#awakening-previous").addEventListener("click", () => {
+$("#awakening-answer").addEventListener("input", () => {
+  clearTimeout(awakeningAutosaveTimer);
+  $("#awakening-save-state").textContent = awakeningData?.storage_consent
+    ? "Saving automatically when you pause…"
+    : "Progress will save automatically. Turn on reflection storage to save this answer.";
+  awakeningAutosaveTimer = window.setTimeout(() => { void saveAwakeningDraft(); }, 800);
+});
+
+$("#awakening-previous").addEventListener("click", async () => {
   if (awakeningData && awakeningStepIndex > 0) {
+    clearTimeout(awakeningAutosaveTimer);
+    await saveAwakeningDraft();
     renderAwakening(awakeningData, awakeningStepIndex - 1);
   }
 });
@@ -2322,6 +2399,10 @@ $("#awakening-consent").addEventListener("change", async (event) => {
     });
     const empty = $("#awakening-assessment-list").querySelector(".field-hint");
     if (empty) empty.hidden = checkbox.checked;
+    if (checkbox.checked && $("#awakening-answer").value.trim()) {
+      clearTimeout(awakeningAutosaveTimer);
+      awakeningAutosaveTimer = window.setTimeout(() => { void saveAwakeningDraft(); }, 0);
+    }
     showNotice(checkbox.checked
       ? "Awakening reflection and area-note storage is on for this local account."
       : "New answers will not be saved. Existing reflections and area notes remain until deleted.");
@@ -2413,6 +2494,8 @@ $("#reflection-consent").addEventListener("change", async (event) => {
 $("#awakening-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   if (!awakeningData) return;
+  clearTimeout(awakeningAutosaveTimer);
+  await awakeningAutosaveQueue;
   const step = awakeningData.steps[awakeningStepIndex];
   const answer = $("#awakening-answer").value.trim();
   try {
@@ -2429,6 +2512,8 @@ $("#awakening-form").addEventListener("submit", async (event) => {
 
 $("#awakening-save-later").addEventListener("click", async () => {
   if (!awakeningData) return;
+  clearTimeout(awakeningAutosaveTimer);
+  await awakeningAutosaveQueue;
   const step = awakeningData.steps[awakeningStepIndex];
   const answer = $("#awakening-answer").value.trim();
   try {
@@ -2445,6 +2530,8 @@ $("#awakening-save-later").addEventListener("click", async () => {
 
 $("#awakening-skip").addEventListener("click", async () => {
   if (!awakeningData) return;
+  clearTimeout(awakeningAutosaveTimer);
+  await saveAwakeningDraft();
   const step = awakeningData.steps[awakeningStepIndex];
   try {
     await api(`/api/v1/onboarding/awakening/${step.step}`, {
@@ -2463,8 +2550,8 @@ $("#awakening-delete").addEventListener("click", async () => {
   try {
     const result = await api("/api/v1/onboarding/awakening/answers", { method: "DELETE" });
     await loadWorkspace();
-    const deleted = result.deleted_answers + result.deleted_assessments;
-    showNotice(`${deleted} saved reflection or area note${deleted === 1 ? "" : "s"} deleted.`);
+    const deleted = result.deleted_answers + result.deleted_revisions + result.deleted_assessments;
+    showNotice(`${deleted} saved answer, prior version, or area note${deleted === 1 ? "" : "s"} deleted.`);
   } catch (error) {
     showNotice(error.message);
   }

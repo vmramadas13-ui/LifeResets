@@ -293,6 +293,9 @@ details form { margin-top: 15px; }
 .capacity-track span.over-capacity { background: var(--sakura); }
 .awakening-progress { display: grid; gap: 8px; margin: 14px 0 20px; }
 .awakening-progress .capacity-track { max-width: 520px; }
+.answer-history { margin: 12px 0 18px; padding: 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); }
+.answer-history > summary { min-height: 36px; font-weight: 800; cursor: pointer; }
+.answer-history .record-list li { white-space: pre-wrap; }
 .awakening-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; }
 .awakening-actions button { min-height: 48px; }
 .awakening-actions #awakening-save { margin-left: auto; }
