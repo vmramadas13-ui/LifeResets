@@ -1704,7 +1704,11 @@ function renderReviews(reviews, goals) {
     const form = document.createElement("form");
     form.className = "guided-review-form";
     const responseKeys = ["wins", "blockers", "changes", "next_step"];
-    for (const key of responseKeys) {
+    const steps = responseKeys.map((key, index) => {
+      const fieldset = document.createElement("fieldset");
+      fieldset.className = "guided-review-step";
+      const legend = document.createElement("legend");
+      legend.textContent = `Prompt ${index + 1} of ${responseKeys.length}`;
       const label = document.createElement("label");
       label.textContent = review.prompts[key];
       const answer = document.createElement("textarea");
@@ -1714,40 +1718,98 @@ function renderReviews(reviews, goals) {
       answer.value = review.responses[key] || "";
       answer.disabled = !reflectionStorageConsent;
       label.append(answer);
-      form.append(label);
-    }
+      fieldset.append(legend, label);
+      form.append(fieldset);
+      return fieldset;
+    });
+    const stepProgress = document.createElement("p");
+    stepProgress.className = "review-step-progress";
+    stepProgress.setAttribute("aria-live", "polite");
+    form.prepend(stepProgress);
     const actions = document.createElement("div");
-    actions.className = "review-actions";
+    actions.className = "review-step-actions";
+    let currentStep = 0;
+    const previous = document.createElement("button");
+    previous.type = "button";
+    previous.className = "quiet";
+    previous.textContent = "Previous prompt";
+    previous.addEventListener("click", () => setReviewStep(currentStep - 1));
+    const next = document.createElement("button");
+    next.type = "submit";
+    next.dataset.reviewAction = "next";
+    next.textContent = "Save and continue";
     const save = document.createElement("button");
     save.type = "submit";
     save.dataset.reviewAction = "save";
-    save.textContent = "Save answers";
+    save.textContent = "Save for later";
     save.disabled = !reflectionStorageConsent;
     const complete = document.createElement("button");
     complete.type = "submit";
     complete.dataset.reviewAction = "complete";
     complete.className = "quiet";
     complete.textContent = review.status === "completed" ? "Reopen review" : "Complete review";
-    actions.append(save, complete);
+    actions.append(previous, next, save, complete);
     form.append(actions);
+    function setReviewStep(index) {
+      currentStep = Math.max(0, Math.min(index, steps.length - 1));
+      steps.forEach((step, stepIndex) => { step.hidden = stepIndex !== currentStep; });
+      stepProgress.textContent = `Prompt ${currentStep + 1} of ${steps.length}`;
+      previous.disabled = currentStep === 0;
+      next.hidden = currentStep === steps.length - 1;
+      complete.hidden = currentStep !== steps.length - 1;
+      if (!reflectionStorageConsent) {
+        stepProgress.textContent += " · enable reflection storage to save answers";
+      }
+    }
+    setReviewStep(0);
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      const action = event.submitter?.dataset.reviewAction;
+      const action = event.submitter?.dataset.reviewAction || "save";
       const payload = {};
       if (reflectionStorageConsent) {
         payload.responses = Object.fromEntries(
           responseKeys.map((key) => [key, form.elements[key].value.trim() || null]),
         );
       }
+      if (action === "next") {
+        if (reflectionStorageConsent) {
+          try {
+            const updated = await api(`/api/v1/reviews/${review.id}`, {
+              method: "PATCH",
+              body: JSON.stringify({ status: review.status, responses: payload.responses }),
+            });
+            review.responses = updated.responses;
+          } catch (error) {
+            showNotice(error.message);
+            return;
+          }
+        }
+        setReviewStep(currentStep + 1);
+        showNotice(reflectionStorageConsent
+          ? "Answer saved. Continue when you’re ready."
+          : "You can review each prompt. Enable reflection storage to save answers.");
+        return;
+      }
       if (action === "save") payload.status = "draft";
-      if (action === "complete") payload.status = review.status === "completed" ? "draft" : "completed";
+      if (action === "complete") {
+        payload.status = review.status === "completed" ? "draft" : "completed";
+      }
       try {
-        await api(`/api/v1/reviews/${review.id}`, {
+        const updated = await api(`/api/v1/reviews/${review.id}`, {
           method: "PATCH",
           body: JSON.stringify(payload),
         });
-        await loadWorkspace();
-        showNotice(action === "complete" && review.status !== "completed" ? "Review completed. You can revisit it later." : "Review saved.");
+        review.responses = updated.responses;
+        review.status = updated.status;
+        detail.textContent = review.status === "completed" ? "Completed" : "Draft";
+        if (action === "complete") {
+          await loadWorkspace();
+          showNotice(review.status === "completed"
+            ? "Review completed. You can revisit it later."
+            : "Review reopened as a draft.");
+        } else {
+          showNotice("Review saved as a draft.");
+        }
       } catch (error) {
         showNotice(error.message);
       }
@@ -1780,8 +1842,40 @@ function renderReviews(reviews, goals) {
       carryForward.append(explanation);
       if (review.follow_up_task_id) {
         const saved = document.createElement("small");
-        saved.textContent = "This review already has a follow-up task. You can choose it for a day in the planner.";
-        carryForward.append(saved);
+        saved.textContent = "This review already has a follow-up task. Choose a day plan if you want to schedule it.";
+        const chooseTask = document.createElement("button");
+        chooseTask.type = "button";
+        chooseTask.className = "quiet";
+        const findTaskChoice = () => [...$("#task-options").querySelectorAll("[data-plan-task]")]
+          .find((checkbox) => checkbox.dataset.planTask === review.follow_up_task_id);
+        const taskChoice = findTaskChoice();
+        chooseTask.disabled = !taskChoice;
+        chooseTask.textContent = "Choose for the selected day plan";
+        chooseTask.addEventListener("click", () => {
+          const currentChoice = findTaskChoice();
+          if (!currentChoice) {
+            showNotice("This follow-up task is no longer open to plan.");
+            return;
+          }
+          if (currentChoice.checked) {
+            showNotice("Follow-up is already selected. Save the day plan when you’re ready.");
+            $("#today").scrollIntoView({
+              behavior: document.documentElement.dataset.reduceMotion === "true" ? "auto" : "smooth",
+              block: "start",
+            });
+            currentChoice.focus();
+            return;
+          }
+          currentChoice.checked = true;
+          currentChoice.dispatchEvent(new Event("change", { bubbles: true }));
+          $("#today").scrollIntoView({
+            behavior: document.documentElement.dataset.reduceMotion === "true" ? "auto" : "smooth",
+            block: "start",
+          });
+          currentChoice.focus();
+          showNotice("Follow-up selected. Save the day plan when you’re ready.");
+        });
+        carryForward.append(saved, chooseTask);
       } else {
         const goalLabel = document.createElement("label");
         goalLabel.textContent = "Link to a goal (optional)";

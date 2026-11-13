@@ -205,6 +205,12 @@ details form { margin-top: 15px; }
 .review-carry-forward { display: grid; max-width: 620px; gap: 10px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
 .review-carry-forward p { margin: 0; }
 .review-carry-forward button { justify-self: start; }
+.guided-review-step { min-width: 0; margin: 0; padding: 0; border: 0; }
+.guided-review-step[hidden] { display: none; }
+.guided-review-step legend { margin-bottom: 10px; color: var(--muted); font-size: .86rem; font-weight: 750; }
+.review-step-progress { margin: 0; color: var(--muted); font-size: .86rem; }
+.review-step-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.review-step-actions button { min-height: 44px; }
 #habit-weekdays-field[hidden], #habit-custom-schedule-field[hidden] { display: none; }
 .habit-builder-guide { max-width: 720px; color: var(--muted); line-height: 1.55; }
 .habit-builder-preview { max-width: 720px; margin: 10px 0 16px; padding: 12px 14px; border-left: 4px solid var(--sky); border-radius: 0 12px 12px 0; background: var(--surface); line-height: 1.55; }

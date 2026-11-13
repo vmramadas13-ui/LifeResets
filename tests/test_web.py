@@ -74,6 +74,10 @@ def test_web_shell_and_pwa_files_are_served() -> None:
         assert "unit is locked to keep its history accurate" in app_script.text
         assert "Dated history remains unchanged." in app_script.text
         assert "Turn next step into a task" in app_script.text
+        assert "Save and continue" in app_script.text
+        assert "function setReviewStep(index)" in app_script.text
+        assert 'fieldset.className = "guided-review-step"' in app_script.text
+        assert "Choose for the selected day plan" in app_script.text
         assert "Link to an active goal" in app_script.text
         assert (
             "deleting the review answers will not delete this task"
@@ -108,7 +112,7 @@ def test_web_shell_and_pwa_files_are_served() -> None:
         assert client.get("/static/app-icon-512.png").status_code == 200
         worker = client.get("/sw.js")
         assert worker.status_code == 200
-        assert 'const CACHE = "liferesets-shell-v6"' in worker.text
+        assert 'const CACHE = "liferesets-shell-v7"' in worker.text
         assert worker.headers["service-worker-allowed"] == "/"
         assert 'url.pathname.startsWith("/api/")' in worker.text
         assert client.get("/static/app.js").status_code == 200
