@@ -26,6 +26,11 @@ def test_web_shell_and_pwa_files_are_served() -> None:
         assert "Add a busy time" in page.text
         assert 'id="task-options"' in page.text
         assert 'id="recovery-list"' in page.text
+        assert 'id="daily-reflection-panel"' in page.text
+        assert 'id="daily-reflection-form"' in page.text
+        assert 'id="daily-reflection-save"' in page.text
+        assert 'id="daily-reflection-delete"' in page.text
+        assert 'name="tomorrow_support"' in page.text
         assert 'id="theme-toggle"' in page.text
         assert 'id="motion-toggle"' in page.text
         assert 'id="language-toggle"' in page.text
@@ -74,6 +79,9 @@ def test_web_shell_and_pwa_files_are_served() -> None:
         assert "unit is locked to keep its history accurate" in app_script.text
         assert "Dated history remains unchanged." in app_script.text
         assert "Turn next step into a task" in app_script.text
+        assert "function renderDailyReflection(reflection)" in app_script.text
+        assert "daily-reflection-delete" in app_script.text
+        assert "/reflection`" in app_script.text
         assert "Save and continue" in app_script.text
         assert "function setReviewStep(index)" in app_script.text
         assert 'fieldset.className = "guided-review-step"' in app_script.text
@@ -86,6 +94,7 @@ def test_web_shell_and_pwa_files_are_served() -> None:
         assert 'id="reviews-section"' in page.text
         assert 'id="review-form"' in page.text
         assert 'id="reflection-consent"' in page.text
+        assert "review answers and optional daily reflections" in page.text
         assert 'id="awakening-form"' in page.text
         assert 'id="awakening-consent"' in page.text
         assert 'id="awakening-save-later"' in page.text
@@ -112,7 +121,7 @@ def test_web_shell_and_pwa_files_are_served() -> None:
         assert client.get("/static/app-icon-512.png").status_code == 200
         worker = client.get("/sw.js")
         assert worker.status_code == 200
-        assert 'const CACHE = "liferesets-shell-v7"' in worker.text
+        assert 'const CACHE = "liferesets-shell-v8"' in worker.text
         assert worker.headers["service-worker-allowed"] == "/"
         assert 'url.pathname.startsWith("/api/")' in worker.text
         assert client.get("/static/app.js").status_code == 200

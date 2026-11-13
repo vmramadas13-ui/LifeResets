@@ -819,11 +819,12 @@ async function loadWorkspace() {
   $("#logout").hidden = false;
   if (!$("#daily-plan-date").value) $("#daily-plan-date").value = localDateString();
   const planDate = $("#daily-plan-date").value;
-  const [domains, goals, habits, preview, rpg, insights, inbox, awakening, campaigns, reviews, consents, tasks, quests, currentPlan, recovery, skills, chronicle, agentActions] = await Promise.all([
+  const [domains, goals, habits, preview, rpg, insights, inbox, awakening, campaigns, reviews, consents, tasks, quests, currentPlan, recovery, dailyReflection, skills, chronicle, agentActions] = await Promise.all([
     api("/api/v1/domains"), api("/api/v1/goals"), api("/api/v1/habits"), api("/api/v1/plans/preview"), api("/api/v1/rpg/status"), api("/api/v1/insights/progress"), api("/api/v1/notifications/inbox"),
     api("/api/v1/onboarding/awakening"), api("/api/v1/campaigns"), api("/api/v1/reviews"), api("/api/v1/consents"), api("/api/v1/tasks"),
     api("/api/v1/quests"),
     api(`/api/v1/daily-plans/${planDate}`), api(`/api/v1/daily-plans/${planDate}/recovery`),
+    api(`/api/v1/daily-plans/${planDate}/reflection`),
     api("/api/v1/rpg/skills"), api("/api/v1/rpg/chronicle"), api("/api/v1/agent/actions"),
   ]);
   const latestReflectionConsent = consents
@@ -856,6 +857,7 @@ async function loadWorkspace() {
   renderPlan(preview);
   renderDailyPlan(currentPlan);
   renderRecovery(recovery);
+  renderDailyReflection(dailyReflection);
   renderProgress(rpg);
   renderInsights(insights);
   renderInbox(inbox);
@@ -1163,6 +1165,26 @@ function renderRecovery(recovery) {
     rows.push(empty);
   }
   $("#recovery-list").replaceChildren(...rows);
+}
+
+function renderDailyReflection(reflection) {
+  const form = $("#daily-reflection-form");
+  const responses = reflection?.responses || {};
+  for (const field of ["wins", "friction", "energy_note", "tomorrow_support"]) {
+    form.elements[field].value = responses[field] || "";
+    form.elements[field].disabled = !reflection?.storage_consent;
+  }
+  $("#daily-reflection-save").disabled = !reflection?.storage_consent;
+  $("#daily-reflection-delete").disabled = !reflection?.has_reflection;
+  if (!reflection?.storage_consent) {
+    $("#daily-reflection-state").textContent = reflection?.has_reflection
+      ? "Storage permission is off. Your earlier reflection is still saved; you can delete it here."
+      : "Turn on reflection storage in Settings before saving a private check-in.";
+  } else {
+    $("#daily-reflection-state").textContent = reflection.has_reflection
+      ? "Saved for this day. You can edit it or delete it."
+      : "Nothing is saved until you choose Save reflection.";
+  }
 }
 
 function renderAwakening(awakening, selectedIndex = null) {
@@ -2351,8 +2373,8 @@ $("#reflection-consent").addEventListener("change", async (event) => {
     reflectionStorageConsent = granted;
     await loadWorkspace();
     showNotice(granted
-      ? "Review answer storage is on for this local account."
-      : "New review answers will not be saved. You can still delete saved answers.");
+      ? "Review answers and optional daily reflections can now be saved in this local account."
+      : "New reflections will not be saved. Existing review answers and daily reflections can still be deleted.");
   } catch (error) {
     checkbox.checked = !granted;
     showNotice(error.message);
@@ -2537,6 +2559,38 @@ $("#daily-plan-form").addEventListener("submit", async (event) => {
   } catch (error) { showNotice(error.message); }
 });
 
+$("#daily-reflection-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!reflectionStorageConsent) {
+    showNotice("Turn on reflection storage in Settings before saving this check-in.");
+    return;
+  }
+  const form = event.currentTarget;
+  const payload = formObject(form);
+  if (!Object.values(payload).some((value) => value.trim())) {
+    showNotice("Add a note to at least one reflection prompt, or leave it blank.");
+    return;
+  }
+  try {
+    const saved = await api(`/api/v1/daily-plans/${$("#daily-plan-date").value}/reflection`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+    renderDailyReflection(saved);
+    showNotice("Your reflection is saved for this day.");
+  } catch (error) { showNotice(error.message); }
+});
+
+$("#daily-reflection-delete").addEventListener("click", async () => {
+  const planDate = $("#daily-plan-date").value;
+  if (!window.confirm(`Delete the saved reflection for ${planDate}?`)) return;
+  try {
+    await api(`/api/v1/daily-plans/${planDate}/reflection`, { method: "DELETE" });
+    renderDailyReflection(await api(`/api/v1/daily-plans/${planDate}/reflection`));
+    showNotice("The daily reflection was deleted.");
+  } catch (error) { showNotice(error.message); }
+});
+
 $("#calendar-import-file").addEventListener("change", () => {
   importedCalendarPreview = null;
   $("#calendar-import-preview-list").replaceChildren();
@@ -2647,12 +2701,14 @@ $("#daily-plan-date").addEventListener("change", async () => {
   const planDate = $("#daily-plan-date").value;
   if (!planDate) return;
   try {
-    const [plan, recovery] = await Promise.all([
+    const [plan, recovery, reflection] = await Promise.all([
       api(`/api/v1/daily-plans/${planDate}`),
       api(`/api/v1/daily-plans/${planDate}/recovery`),
+      api(`/api/v1/daily-plans/${planDate}/reflection`),
     ]);
     renderDailyPlan(plan);
     renderRecovery(recovery);
+    renderDailyReflection(reflection);
   } catch (error) { showNotice(error.message); }
 });
 

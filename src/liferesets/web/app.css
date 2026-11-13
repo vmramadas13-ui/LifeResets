@@ -336,6 +336,13 @@ details form { margin-top: 15px; }
 .recovery-heading h3 { margin: 0; }
 .recovery-heading .hint { max-width: 620px; }
 .recovery-heading button { flex: 0 0 auto; }
+.daily-reflection-panel { margin-top: 18px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 16px; background: var(--paper); }
+.daily-reflection-panel > summary { min-height: 32px; color: var(--ink); font-weight: 800; cursor: pointer; }
+.daily-reflection-panel > .hint { max-width: 760px; }
+.daily-reflection-form { max-width: none; display: grid; gap: 12px; margin-top: 14px; }
+.daily-reflection-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.daily-reflection-actions button { min-height: 46px; }
+.daily-reflection-state { margin: 0; }
 .recovery-add { flex: 0 0 auto; }
 .recovery-empty { color: var(--muted); }
 
@@ -447,6 +454,9 @@ section[id] { scroll-margin-top: 18px; }
   .defer-control input { flex: 1 1 auto; width: auto; }
   .recovery-heading { flex-direction: column; }
   .recovery-heading button, .recovery-add { width: 100%; }
+  .daily-reflection-panel { padding: 14px; }
+  .daily-reflection-actions { flex-direction: column; }
+  .daily-reflection-actions button { width: 100%; }
   .section-heading { align-items: flex-start; }
   .section-heading button { min-width: 84px; }
   .character-heading { grid-template-columns: 52px minmax(0, 1fr) 58px; gap: 10px; }

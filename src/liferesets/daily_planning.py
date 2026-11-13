@@ -8,16 +8,18 @@ from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from liferesets.database import get_db
 from liferesets.models import (
     AuditEvent,
+    ConsentRecord,
     DailyPlan,
     DailyPlanBusyWindow,
     DailyPlanItem,
+    DailyReflection,
     Profile,
     Task,
     TaskRescheduleEvent,
@@ -98,6 +100,33 @@ class DailyPlanItemUpdate(BaseModel):
         if self.defer_to is not None and self.status != "deferred":
             raise ValueError("defer_to is valid only when status is deferred")
         return self
+
+
+class DailyReflectionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    wins: str | None = Field(default=None, max_length=1200)
+    friction: str | None = Field(default=None, max_length=1200)
+    energy_note: str | None = Field(default=None, max_length=1200)
+    tomorrow_support: str | None = Field(default=None, max_length=1200)
+
+    @field_validator("wins", "friction", "energy_note", "tomorrow_support")
+    @classmethod
+    def trim_response(cls, value: str | None) -> str | None:
+        return value.strip() or None if value is not None else None
+
+    @model_validator(mode="after")
+    def has_response(self) -> DailyReflectionInput:
+        if not any((self.wins, self.friction, self.energy_note, self.tomorrow_support)):
+            raise ValueError("Add at least one reflection note")
+        return self
+
+
+DAILY_REFLECTION_PROMPTS = {
+    "wins": "What went well or felt meaningful today?",
+    "friction": "What felt harder than expected?",
+    "energy_note": "How was your energy today?",
+    "tomorrow_support": "What would make tomorrow a little easier?",
+}
 
 
 def _audit(db: Session, user: User, action: str) -> None:
@@ -250,6 +279,102 @@ def get_daily_plan(
             "is_saved": False,
         }
     return _plan_payload(plan)
+
+
+def _daily_reflection_consent_active(db: Session, user_id: UUID) -> bool:
+    latest = db.scalar(
+        select(ConsentRecord)
+        .where(
+            ConsentRecord.user_id == user_id,
+            ConsentRecord.purpose == "reflection_storage",
+        )
+        .order_by(ConsentRecord.created_at.desc(), ConsentRecord.id.desc())
+        .limit(1)
+    )
+    return bool(latest and latest.granted)
+
+
+def _daily_reflection_payload(
+    reflection_date: date,
+    reflection: DailyReflection | None,
+    storage_consent: bool,
+) -> dict[str, object]:
+    return {
+        "reflection_date": reflection_date.isoformat(),
+        "responses": reflection.responses if reflection is not None else {},
+        "prompts": DAILY_REFLECTION_PROMPTS,
+        "has_reflection": reflection is not None,
+        "storage_consent": storage_consent,
+    }
+
+
+@router.get("/{plan_date}/reflection")
+def get_daily_reflection(
+    plan_date: date,
+    auth: Authenticated,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    reflection = db.scalar(
+        select(DailyReflection).where(
+            DailyReflection.user_id == auth.user.id,
+            DailyReflection.reflection_date == plan_date,
+        )
+    )
+    return _daily_reflection_payload(
+        plan_date,
+        reflection,
+        _daily_reflection_consent_active(db, auth.user.id),
+    )
+
+
+@router.put("/{plan_date}/reflection")
+def save_daily_reflection(
+    plan_date: date,
+    request: DailyReflectionInput,
+    auth: AuthenticatedWithCsrf,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    if not _daily_reflection_consent_active(db, auth.user.id):
+        raise HTTPException(
+            status_code=403,
+            detail="Grant reflection_storage consent before saving a daily reflection.",
+        )
+    reflection = db.scalar(
+        select(DailyReflection).where(
+            DailyReflection.user_id == auth.user.id,
+            DailyReflection.reflection_date == plan_date,
+        )
+    )
+    if reflection is None:
+        reflection = DailyReflection(
+            user_id=auth.user.id,
+            reflection_date=plan_date,
+        )
+        db.add(reflection)
+    reflection.responses = request.model_dump(exclude_none=True)
+    _audit(db, auth.user, "daily_reflection.saved")
+    db.commit()
+    return _daily_reflection_payload(plan_date, reflection, True)
+
+
+@router.delete("/{plan_date}/reflection")
+def delete_daily_reflection(
+    plan_date: date,
+    auth: AuthenticatedWithCsrf,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    reflection = db.scalar(
+        select(DailyReflection).where(
+            DailyReflection.user_id == auth.user.id,
+            DailyReflection.reflection_date == plan_date,
+        )
+    )
+    deleted = reflection is not None
+    if reflection is not None:
+        db.delete(reflection)
+        _audit(db, auth.user, "daily_reflection.deleted")
+        db.commit()
+    return {"reflection_date": plan_date.isoformat(), "deleted": deleted}
 
 
 def _calendar_escape(value: str) -> str:
@@ -641,3 +766,20 @@ def export_daily_plans(db: Session, user_id: UUID) -> list[dict[str, object]]:
         .order_by(DailyPlan.plan_date)
     ).all()
     return [_plan_payload(plan) for plan in plans]
+
+
+def export_daily_reflections(db: Session, user_id: UUID) -> list[dict[str, object]]:
+    reflections = db.scalars(
+        select(DailyReflection)
+        .where(DailyReflection.user_id == user_id)
+        .order_by(DailyReflection.reflection_date)
+    ).all()
+    return [
+        {
+            "reflection_date": reflection.reflection_date.isoformat(),
+            "responses": reflection.responses,
+            "created_at": reflection.created_at.isoformat(),
+            "updated_at": reflection.updated_at.isoformat(),
+        }
+        for reflection in reflections
+    ]

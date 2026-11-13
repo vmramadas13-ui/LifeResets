@@ -92,6 +92,9 @@ class User(Base):
     daily_plans: Mapped[list[DailyPlan]] = relationship(
         back_populates="user", cascade="all, delete-orphan", passive_deletes=True
     )
+    daily_reflections: Mapped[list[DailyReflection]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", passive_deletes=True
+    )
     progression_settings: Mapped[ProgressionSettings | None] = relationship(
         back_populates="user", cascade="all, delete-orphan", passive_deletes=True
     )
@@ -957,6 +960,34 @@ class DailyPlanBusyWindow(Base):
     end_time: Mapped[time] = mapped_column(Time, nullable=False)
 
     plan: Mapped[DailyPlan] = relationship(back_populates="busy_windows")
+
+
+class DailyReflection(Base):
+    """Consent-gated private reflection associated with one local date."""
+
+    __tablename__ = "daily_reflections"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "reflection_date", name="unique_user_daily_reflection"
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    reflection_date: Mapped[date] = mapped_column(Date, nullable=False)
+    responses: Mapped[dict[str, str]] = mapped_column(
+        JSON, default=dict, nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+    user: Mapped[User] = relationship(back_populates="daily_reflections")
 
 
 class DailyPlanItem(Base):

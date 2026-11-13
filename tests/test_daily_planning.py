@@ -16,6 +16,18 @@ def _login(client, test_user: dict[str, object]) -> None:
     client.headers.update({"X-CSRF-Token": client.cookies.get("lr-csrf")})
 
 
+def _allow_reflection_storage(client, granted: bool = True) -> None:
+    response = client.post(
+        "/api/v1/consents",
+        json={
+            "purpose": "reflection_storage",
+            "granted": granted,
+            "policy_version": "v1",
+        },
+    )
+    assert response.status_code == 201, response.text
+
+
 def _create_task(client, title: str, due_date: str | None = None) -> dict[str, object]:
     payload: dict[str, object] = {"title": title}
     if due_date is not None:
@@ -34,6 +46,87 @@ def test_daily_plan_requires_authentication(client) -> None:
         ).status_code
         == 401
     )
+
+
+def test_daily_reflection_requires_authentication(client) -> None:
+    assert client.get("/api/v1/daily-plans/2026-11-11/reflection").status_code == 401
+    assert (
+        client.put(
+            "/api/v1/daily-plans/2026-11-11/reflection",
+            json={"wins": "A small win"},
+        ).status_code
+        == 401
+    )
+
+
+def test_daily_reflection_requires_consent_and_is_account_exportable(
+    client, test_user
+) -> None:
+    _login(client, test_user)
+    path = "/api/v1/daily-plans/2026-11-11/reflection"
+
+    initial = client.get(path)
+    assert initial.status_code == 200
+    assert initial.json()["storage_consent"] is False
+    assert initial.json()["has_reflection"] is False
+    assert client.put(path, json={"wins": "A small win"}).status_code == 403
+
+    _allow_reflection_storage(client)
+    saved = client.put(
+        path,
+        json={"wins": "  Finished one useful task.  ", "energy_note": "Steady"},
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["responses"] == {
+        "wins": "Finished one useful task.",
+        "energy_note": "Steady",
+    }
+    assert saved.json()["has_reflection"] is True
+    assert saved.json()["storage_consent"] is True
+
+    updated = client.put(path, json={"wins": "Revised note"})
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["responses"] == {"wins": "Revised note"}
+
+    fetched = client.get(path)
+    assert fetched.json()["responses"] == updated.json()["responses"]
+    exported = client.get("/api/v1/export").json()["daily_reflections"]
+    assert exported[0]["reflection_date"] == "2026-11-11"
+    assert exported[0]["responses"] == updated.json()["responses"]
+    assert len(exported) == 1
+
+
+def test_daily_reflection_can_be_deleted_after_consent_is_withdrawn(
+    client, test_user
+) -> None:
+    _login(client, test_user)
+    path = "/api/v1/daily-plans/2026-11-11/reflection"
+    _allow_reflection_storage(client)
+    assert (
+        client.put(path, json={"tomorrow_support": "Leave more room"}).status_code
+        == 200
+    )
+    _allow_reflection_storage(client, granted=False)
+    assert client.put(path, json={"wins": "A new note"}).status_code == 403
+
+    deleted = client.delete(path)
+    assert deleted.status_code == 200
+    assert deleted.json()["deleted"] is True
+    after_delete = client.get(path).json()
+    assert after_delete["storage_consent"] is False
+    assert after_delete["has_reflection"] is False
+    assert after_delete["responses"] == {}
+    assert client.get("/api/v1/export").json()["daily_reflections"] == []
+
+
+def test_daily_reflection_rejects_empty_answers(client, test_user) -> None:
+    _login(client, test_user)
+    _allow_reflection_storage(client)
+    response = client.put(
+        "/api/v1/daily-plans/2026-11-11/reflection",
+        json={"wins": "   ", "friction": None},
+    )
+    assert response.status_code == 422
 
 
 def test_plan_saves_capacity_energy_and_user_task_decisions(
